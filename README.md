@@ -11,40 +11,26 @@ fadelity and efficiency.
 
 > NOTE:  
 > This GPU-based reconstruction toolkit is currently under development, and
-> the API is subjected to change in the final stable realse (tentative date
-> is scheduled around summer 2019).
+> the API is subjected to change in the final stable release.
 
-## Installation
+## Installation (written for Linux)
+It is assumed that you have installed miniconda. Instructions for this can be found at (https://www.anaconda.com/docs/getting-started/miniconda/install/overview)
 
-1. install cuda-toolkit
 
-    *    reconmmend cuda9.1 but any version supported by pycuda is fine
-2. create python virtual environment(step by step):
-
-	* conda create --name hexomap_env_test python=3.6
-	* conda activate hexomap_env_test
-
-	* conda install numpy scipy numba matplotlib h5py jupyter
-	* conda install -c anaconda yaml pyyaml dataclasses tifffile opencv
-	* pip install pycuda
-    
-	> Or reference https://wiki.tiker.net/PyCuda/Installation/Linux/
-    
-    > To test installation, Type ‘python’ in terminal to enter python terminal, then try: ">>>from pycuda import autoinit"
-	
-2. install mpi4py:
-    * conda install -c conda-forge mpi4py
-	
-3. Install HEXOMAP:
-    * git clone https://github.com/HeLiuCMU/HEXOMAP.git
-	* cd HEXOMAP/
-	* python setup.py install
-    
-### to activate mpi usage you would need to install mpi4py. This could be tricky and varies from machine to machine. Please contact your administrator or look for documentation to install mpi4py successfully.
-        
-4
-. check installation:
-    * under HEXOMAP/: run "python -m hexomap"
+1. Pull HEXOMAP from Git
+   * git clone https://github.com/MaxZipperer/HEXOMAP.git
+   * cd HEXOMAP
+2. Create the Conda Environment
+   * conda env create --file hexomap_env.yml --name env_name
+   * Change env_name to whatever you like
+   * conda activate env_name
+3. Install HEXOMAP
+   * python setup.py install
+4. Verify
+   * At the moment (at least for me) pycuda ignores local installation in favor of global installs
+   * export PYCUDA_DEFAULT_NVCC_FLAGS="-allow-unsupported-compiler -ccbin $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
+   * python -m hexomap
+   * You'll have to rerun the export step everytime after the conda activate step
 
 ## Usage and Examples
 1. reconstruction	
@@ -53,9 +39,11 @@ fadelity and efficiency.
     *    mpirun -n 4 recon_mpi.py --config config.yml
 1. reduction
     *    mpirun -n 6 reduction.py
+
 ## Roadmap
-* Public release with stable API by the end of summer, 2019.
-* Add efficient foward NF/FF-HEDM simulation toolkit with dedicated GUI/Web frontend.
+* Support for lower symmetries: tetragonal, orthorhombic, trigonal, monoclinic, triclinic
+* Multiple median reconstruction
+* Voxelized strain state reconstruction
 
 ## License
 __BSD 3 Cluase Licence__
