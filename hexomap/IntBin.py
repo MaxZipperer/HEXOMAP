@@ -4,7 +4,7 @@ import sys
 """
 Note:
 1. Can only integrate to one degree
-2. This function just put all data together, so there may be some pixel show multiple times in the data chunk. e.g. same (x,y) value appears multiple times.
+2. This function just puts all data together, so there may be some pixels showing up multiple times in the data chunk. e.g. same (x,y) value appears multiple times.
 3. Due to the same reason, the Peak IDs will be messed up (Peak ID from several images are put together to one image)
 4. Although issues 2 and 3 exist, I9 still works fine with integerated binary files. Look at "ImageData.cpp".
 """

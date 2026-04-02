@@ -26,7 +26,7 @@ def twiddle_optimize(func: Callable[[], float],
     func: Callable
         the objective/loss function designed for a minimization optimization 
         routine 
-        -- the lower of the returned value, the better the parameters --
+        -- the lower the returned value, the better the parameters --
 
     p: list
         initial parameter vector

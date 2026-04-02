@@ -417,7 +417,7 @@ class Reconstructor_GPU():
         dL = np.linspace(-rangeL, rangeL, 10).reshape([-1, 1]).repeat(2, axis=1)
         dJ = np.linspace(-rangeJ, rangeJ, 10).reshape([-1, 1]).repeat(2, axis=1)
         dK = np.linspace(-rangeK, rangeK, 10).reshape([-1, 1]).repeat(2, axis=1)
-        aDetRot = generarte_random_eulerZXZ(centerRot, rangeRot, 10).reshape([-1,self.NDet,3])
+        aDetRot = generate_random_eulerZXZ(centerRot, rangeRot, 10).reshape([-1,self.NDet,3])
         NPhase0Iteration = 0
         maxHitRatio = 0
         ##################### phase 0 #########################################
@@ -513,7 +513,7 @@ class Reconstructor_GPU():
         NSearchOrien = rotMatSeed.shape[1] * rotMatSeed.shape[2] * 40
 
         ######### generate detecter rotation
-        aDetRot = generarte_random_eulerZXZ(centerRot, 0.3, 2).reshape([-1, self.NDet, 3])
+        aDetRot = generate_random_eulerZXZ(centerRot, 0.3, 2).reshape([-1, self.NDet, 3])
         ######### calculate cost, take the maximum hit ratio
         self.geometry_grid_search(centerL, centerJ, centerK, aDetRot, idxVoxel, lSearchMatD, NSearchOrien, NIteration=1, BoundStart=0.01)
         maxHitRatio = self.geoSearchHitRatio.max()
@@ -873,7 +873,7 @@ class Reconstructor_GPU():
                 maxHitRatio = self.geoSearchHitRatio.max()
                 if(maxHitRatio>update_threshold):
                     rot = aDetRot[np.argmax(self.geoSearchHitRatio.ravel()), :,:].reshape([1, self.NDet, 3])
-                    aDetRot = generarte_random_eulerZXZ(np.array([[[90.0, 90.0, 0.0], [90.0, 90.0, 0.0]]]), rangeRot, aDetRot.shape[0]).reshape(aDetRot.shape)
+                    aDetRot = generate_random_eulerZXZ(np.array([[[90.0, 90.0, 0.0], [90.0, 90.0, 0.0]]]), rangeRot, aDetRot.shape[0]).reshape(aDetRot.shape)
                     aDetRot[0,:,:] = rot
             # update relative Range
             rangeL = rangeL * factor
@@ -966,11 +966,20 @@ class Reconstructor_GPU():
             minQ=config.minQ
         except AttributeError:
             minQ = 0
+	#Had some problems with loading h5 files, strings were becoming bytes, more general fix needed rather than case by case
         self.etalimit = config.etalimit
-        self.set_sample(config.sample)
+        if isinstance(config.sample, bytes):
+            sample_name = config.sample.decode('utf-8')
+        else:
+            sample_name = config.sample
+        self.set_sample(sample_name)
         self.set_Q(config.maxQ,minQ=minQ)
         self.energy = config.energy
-        self.expDataInitial = f'{config.fileBin}{config.fileBinLayerIdx}_'      # reduced binary data
+        if isinstance(config.fileBin, bytes):
+            file_bin_str = config.fileBin.decode('utf-8')
+        else:
+            file_bin_str = config.fileBin
+        self.expDataInitial = f'{file_bin_str}{config.fileBinLayerIdx}_'      # reduced binary data
         self.expdataNDigit = config.fileBinDigit               # number of digit in the binary file name
         self.detIdx = config.fileBinDetIdx
         self.NRot = int(config.NRot)
@@ -992,7 +1001,11 @@ class Reconstructor_GPU():
                             shift=config.micShift,
                             mask=micMask,
                            )# resolution of reconstruction and voxel size
-        self.squareMicOutFile = f'{config._initialString}_q{self.maxQ}_rot{self.NRot}_z{config.fileBinLayerIdx}_' \
+        if isinstance(config._initialString, bytes):
+            initialpath = config._initialString.decode('utf-8')
+        else:
+            initialpath = config._initialString
+        self.squareMicOutFile = f'{initialpath}_q{self.maxQ}_rot{self.NRot}_z{config.fileBinLayerIdx}_' \
                             + f'{"x".join(map(str,config.micsize))}_{config.micVoxelSize}' \
                             + f'_shift_{"_".join(map(str, config.micShift))}.npy' # output file name
         self.searchBatchSize = int(config.searchBatchSize)    # number of orientations search at each iteration, larger number will take longer time.
@@ -1469,6 +1482,8 @@ class Reconstructor_GPU():
             self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/cubic.dat'))
         elif self.sample.symtype=='Hexagonal':
             self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/hexagonal.dat'))
+        elif self.sample.symtype=='Tetragonal':
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/tetragonal.dat'))
         else:
             raise NotImplementedError('other symtype FZ not implemented')
         if self.additionalFZ is not None:

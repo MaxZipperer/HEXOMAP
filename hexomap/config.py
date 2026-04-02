@@ -87,7 +87,7 @@ class Config:
         try:
             write_yaml(fName, _d) if fName.endswith(('.yml', '.yaml')) else write_h5(fName, self.__dict__)
         except:
-            raise IOError(f"Cannout write {fName} to disk, need to be yml or h5")
+            raise IOError(f"Cannot write {fName} to disk, need to be yml or h5")
 
     if __name__ == "__main__":
         # testing loading yaml config file

@@ -59,7 +59,7 @@ class Detector:
         """
         pass
 
-    # IntersectoinIdx
+    # IntersectionIdx.
     def acquire_signal(self, 
                        scatter_vec: np.ndarray, 
                        bragg_angle: float,
@@ -109,7 +109,7 @@ class Crystal:
         )
     
     def scatter_vecs(self, q_max: int) -> list:
-        """Generate scattering vectors with Eward sphere capped at q_max"""
+        """Generate scattering vectors with Ewald sphere capped at q_max"""
         recip_prism = Crystal.prism_to_reciprocal(self.prism)
         h_max, k_max, l_max = (q_max/norm(recip_prism, axis=0)).astype(int)
         hkls = product(range(-h_max, h_max+1), 
@@ -195,7 +195,7 @@ class Crystal:
         """
         Description
         -----------
-            Calcualte the reciprocal dual of given prism (column stacked)
+            Calculate the reciprocal dual of given prism (column stacked)
             
             ref:
             https://en.wikipedia.org/wiki/Reciprocal_lattice

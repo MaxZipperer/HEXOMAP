@@ -176,13 +176,7 @@ class CrystalStr:
             self.addAtom([0, 0.5, 0.5], 38)
             self.addAtom([0.5, 0, 0.5], 38)
 
-        elif material == 'Ti_alpha':
-            self.symtype = 'Hexagonal'
-            self.PrimA = 2.951 * np.array([1, 0, 0])
-            self.PrimB = 2.951 * np.array([np.cos(np.pi * 2 / 3), np.sin(np.pi * 2 / 3), 0])
-            self.PrimC = 4.63 * np.array([0, 0, 1])
-            self.addAtom([1 / 3.0, 2 / 3.0, 1 / 4.0], 22)
-            self.addAtom([2 / 3.0, 1 / 3.0, 3 / 4.0], 22)
+        
         elif material == 'Ti7':
             self.symtype = 'Hexagonal'
             self.PrimA = 2.92539 * np.array([1, 0, 0])
@@ -236,18 +230,14 @@ class CrystalStr:
         elif material.endswith(('.yml', '.yaml')):
             d = utility.load_yaml(material)
             self.symtype = d['symtype']
-            if d['symtype'] == 'Tetragonal':
-                self.PrimA = d['PrimA'] * np.array([1, 0, 0])
-                self.PrimB = d['PrimB'] * np.array([0, 1, 0])
-                self.PrimC = d['PrimC'] * np.array([0, 0, 1])
-            elif d['symtype'] == 'Hexagonal':
+            if d['symtype'] == 'Hexagonal':
                 self.PrimA = d['PrimA'] * np.array([1, 0, 0])
                 self.PrimB = d['PrimB'] * np.array([np.cos(np.pi * 2 / 3), np.sin(np.pi * 2 / 3), 0])
                 self.PrimC = d['PrimC'] * np.array([0, 0, 1])
             elif d['symtype'] == 'Cubic':
                 self.PrimA = d['PrimA'] * np.array([1, 0, 0])
                 self.PrimB = d['PrimB'] * np.array([0, 1, 0])
-                self.PrimC = d['PrimC'] * np.array([0, 0, 1])
+                self.PrimC = d['PrimC'] * np.array([0, 0, 1]) 
             else:
                 raise NotImplementedError('symType should be Cubic or Hexagonal')
             for key, value in d['Atom'].items():

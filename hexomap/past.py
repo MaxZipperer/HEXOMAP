@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Provide backward compatibity by provide aliase to the essential functions
+Provide backward compatibility by providing aliase to the essential functions
 
 NOTE:
     Simply add 
@@ -27,8 +27,8 @@ Mat2EulerZXZ           = lambda m: Eulers.from_matrix(m).as_array
 Mat2EulerZXZVectorized = Eulers.matrices_to_eulers 
 # -- rod_from_quaternion
 # NOTE:
-#   the original function use COLUMN (axis=1) stacked quaternions,
-#   the new function use ROW (axis=0) stacked to be consistent with 
+#   the original function used COLUMN (axis=1) stacked quaternions,
+#   the new function uses ROW (axis=0) stacked to be consistent with 
 #   the other methods in the same module.
 quaternion_from_matrix = lambda m: Quaternion.from_matrix(m).as_array.ravel()
 rod_from_quaternion = lambda qs: Rodrigues.rodrigues_from_quaternions(qs.T).T.ravel()
@@ -60,7 +60,7 @@ def  generate_random_rot_mat(n, method='new'):
         return result
 
 
-def generarte_random_eulerZXZ(eulerIn, range, NAngle=10):
+def generate_random_eulerZXZ(eulerIn, range, NAngle=10):
     '''
     generate random euler angles, for detector geometry optimization
 
@@ -102,7 +102,7 @@ def Orien2FZ(m, symtype='Cubic'):
     Returns
     -----------
     oRes:   ndarray
-            The rotation matrix after reduced. Note that this function doesn't actually
+            The rotation matrix after being reduced. Note that this function doesn't actually
             reduce the orientation to fundamental zone, only make sure the angle is the
             smallest one, so there are multiple orientations have the same angle but
             different directions. oRes is only one of them.
@@ -124,7 +124,7 @@ def Orien2FZ(m, symtype='Cubic'):
     return oRes, angle
 # --misorien
 # NOTE:
-#    The original misorien is implememnted in Cuda.  The equivalent one
+#    The original misorien is implemented in Cuda.  The equivalent one
 #    is available in Orientation class with Python native multi-threading.
 
 # Backward compatibility for MicFileTool

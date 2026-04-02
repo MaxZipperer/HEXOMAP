@@ -22,7 +22,7 @@ Conversion chain:
 import numpy              as np
 import concurrent.futures as cf
 
-from dataclasses     import dataclass, field
+from dataclasses     import dataclass
 from typing          import Union
 from hexomap.npmath  import norm
 from hexomap.npmath  import normalize

@@ -1,282 +1,14 @@
-import cv2
-import glob
-import logging
 import matplotlib.pyplot as plt
 import numpy as np
-import os
 import scipy.ndimage as ndi
-import sys
-import tifffile as tiff
+import glob
 import time
-import yaml
-
-from concurrent.futures import ProcessPoolExecutor
-from datetime import datetime
 from numba import jit
-from numba import njit
-from scipy.ndimage import label
+import tifffile
+import os
+import sys
+import cv2
 
-import hexomap
-from hexomap import IntBin
-
-def MedianBlock(layer, fstart, fend, config):
-    #Creates median images and raw image stack for processing
-    if config is not None:
-        FilePerMedian = int(config['NRot']/config['NMedian'])
-    else:
-        FilePerMedian = fend - fstart + 1
-    raw = np.zeros((FilePerMedian, config['dety'], config['detz']), dtype=np.int16)
-    medianimage = np.zeros((config['dety'], config['detz']), dtype=np.int16)
-
-    for ifile in range(int(fstart), fend + 1):
-        try:
-            print(f"Reading file {ifile}")  
-            raw[ifile - fstart, :, :] = tiff.imread(f"{config['imgPrefix']}{str(ifile).zfill(6)}{config['extension']}")
-        except Exception as e:
-            print(f"Error reading file {ifile}: {e}")
-            raise
-
-    medianimage = np.median(raw, axis=0).astype(np.int16)
-    medianfilename = config['medOut'] + 'layer' + str(layer) + ':' + str(fstart) + '-' + str(fend) + '.npy'
-    np.save(medianfilename, medianimage)
-    return raw, medianimage
-
-def extract_peaks_numbaV2(img_sub, baseline=0, minNPixel=4):
-    #Peak extraction by Zipeng Xu
-    h, w = img_sub.shape
-    mask = img_sub > baseline
-    label_map = np.zeros((h, w), dtype=np.int32)
-    current_label = 1
-
-    # Temporary arrays for collecting region-wise data
-    lXTmp = np.empty(h * w, dtype=np.int32)
-    lYTmp = np.empty(h * w, dtype=np.int32)
-    lValTmp = np.empty(h * w, dtype=np.float32)
-    lIDTmp = np.empty(h * w, dtype=np.int32)
-    lStartIdx = np.empty(h * w, dtype=np.int32)
-    lEndIdx = np.empty(h * w, dtype=np.int32)
-    lMaxVal = np.empty(h * w, dtype=np.float32)  # store region max intensity
-    label_counter = 0
-    idx = 0
-
-    for x in range(h):
-        for y in range(w):
-            if mask[x, y] and label_map[x, y] == 0:
-                # Start flood-fill
-                stack = [(x, y)]
-                region_idx_start = idx
-
-                while stack:
-                    cx, cy = stack.pop()
-                    if 0 <= cx < h and 0 <= cy < w and mask[cx, cy] and label_map[cx, cy] == 0:
-                        label_map[cx, cy] = current_label
-                        lXTmp[idx] = cx
-                        lYTmp[idx] = cy
-                        lValTmp[idx] = img_sub[cx, cy]
-                        lIDTmp[idx] = label_counter
-                        idx += 1
-                        for dx in (-1, 0, 1):
-                            for dy in (-1, 0, 1):
-                                if dx != 0 or dy != 0:
-                                    stack.append((cx + dx, cy + dy))
-
-                region_idx_end = idx
-
-                # Compute maximum value in the region
-                vmax = 0.0
-                for i in range(region_idx_start, region_idx_end):
-                    if lValTmp[i] > vmax:
-                        vmax = lValTmp[i]
-
-                if vmax > baseline:
-                    count_valid = 0
-                    for i in range(region_idx_start, region_idx_end):
-                        if lValTmp[i] > max(1.0, 0.1 * vmax):
-                            count_valid += 1
-                    if count_valid >= minNPixel:
-                        lStartIdx[label_counter] = region_idx_start
-                        lEndIdx[label_counter] = region_idx_end
-                        lMaxVal[label_counter] = vmax
-                        label_counter += 1
-                    else:
-                        idx = region_idx_start  # discard region
-                else:
-                    idx = region_idx_start  # discard region
-
-                current_label += 1
-
-    # Output final arrays
-    total_points = 0
-    for i in range(label_counter):
-        for j in range(lStartIdx[i], lEndIdx[i]):
-            if lValTmp[j] > max(1.0, 0.1 * lMaxVal[i]):
-                total_points += 1
-
-    lX = np.empty(total_points, dtype=np.int32)
-    lY = np.empty(total_points, dtype=np.int32)
-    lVal = np.empty(total_points, dtype=np.int32)
-    lID = np.empty(total_points, dtype=np.int32)
-
-    idx_out = 0
-    for i in range(label_counter):
-        for j in range(lStartIdx[i], lEndIdx[i]):
-            if lValTmp[j] > max(1.0, 0.1 * lMaxVal[i]):
-                lX[idx_out] = lXTmp[j]
-                lY[idx_out] = lYTmp[j]
-                lVal[idx_out] = int(lValTmp[j])
-                lID[idx_out] = lIDTmp[j]
-                idx_out += 1
-
-    X_flipped = (w - 1 - lY[:idx_out]).astype(np.int32)
-    Y = lX[:idx_out].astype(np.int32)
-    Intensity = lVal[:idx_out].astype(np.int32)
-    PeakID = lID[:idx_out].astype(np.int32)
-
-    return [X_flipped, Y, Intensity, PeakID]
-
-def process_median_block(ilayer, idet, imed, fstart, numFiles, config):
-    #Processes images for a median
-    # Default is to print everything out
-    if config.get('verbose') is None:
-        verbose = True
-    elif config['verbose'] is True:
-        verbose = True
-    else:
-        verbose = False
-    t0 = time.perf_counter()
-    fend = fstart + numFiles - 1
-
-    # Step 1: Median computation
-    t1 = time.perf_counter()
-    if verbose is True:
-        print(f' \n Calculating median image {imed}')
-    raw, medianimage = MedianBlock(layer=ilayer, fstart=fstart, fend=fend, config=config)
-    t2 = time.perf_counter()
-
-    # Step 2: Subtract and convert
-    if verbose is True:
-        print(f' \n Subtracting median image {imed}')
-    raw = raw - (medianimage + config['blanket'])
-    raw[raw < 0] = 0
-    Subtrfloat = raw.astype(np.float32)
-    t3 = time.perf_counter()
-    
-    # Step 3: Loop over frames to filter and extract
-    for ind in range(numFiles):
-        img = Subtrfloat[ind, :, :]
-        frame_index = ind + numFiles*imed
-        '''plt.imshow(img,cmap='magma_r',vmin=0,vmax=20)
-        plt.title(f'Sub Img {ind} Med {imed}')
-        plt.show()'''
-        if verbose is True:
-            print(f' \n Performing LoG filtering for image {frame_index}')
-        LoG = ndi.gaussian_laplace(img, sigma=config['LoGsig'])
-        Reduced = (LoG < config['LoGcut']) * img
-        '''plt.imshow(Reduced,cmap='magma_r',vmin=0,vmax=20)
-        plt.title(f'Reduced Img {ind} Med {imed}')
-        plt.show()'''
-        if verbose is True:
-            print(f' \n Extracting peaks for image {frame_index}')
-        snp = extract_peaks_numbaV2(Reduced, baseline=config['baseline'], minNPixel=config['minNPixel'])
-        #frame_id = fstart + ind
-        #frame_index = frame_id - config['startIdx']
-        bin_filename = f"{config['binOut']}z{ilayer}_{str(frame_index).zfill(config['NDigit'])}.bin{idet}"
-        if verbose is True:
-            print(f' \n Writing binary file {frame_index}')
-        IntBin.WritePeakBinaryFile(snp, bin_filename)
-
-    t4 = time.perf_counter()
-
-    return f"[L{ilayer} D{idet} M{imed}] files {fstart}-{fend} | Median: {t2-t1:.2f}s | Subtract: {t3-t2:.2f}s | Reduce+Write: {t4-t3:.2f}s"
-
-def image_reduction(config):
-    '''
-    Multiple median image reduction process
-    Example config
-    config = {
-    'dety': 2048, #Detector size
-    'detz': 2048, #Detector size
-    'medOut': '/mnt/data/mzippere/test/test_', #Median image output directory
-    'binOut': '/mnt/data/mzippere/test/test_', #Binarized image output directory
-    'imgPrefix': '/mnt/data/mzippere/pokharel_jun25/nf/nf_Ti_1/nf_Ti_1_', #File path up to index for finding images
-    'NDigit': 6, #Number of digits in image file name
-    'extension': '.tif', #Image file extension
-
-    'NMedian': 2, #Number of medians per detector
-    'blanket': 5, #Flat subtraction
-    'LoGsig': 1.5, #Laplacian-of-Gaussian broadness
-    'LoGcut': -1e-3, #Laplacian-of-Gaussian threshold
-    'baseline': 0, #Minimum intensity for peak extraction
-    'minNPixel': 4, #Minimum number of pixels for peak extraction
-
-    'layerIdx': [0], #Layers to process, must be a list
-    'NDet': 2, #Number of detectors
-    'NRot': 20, #Images per detector
-    'startIdx': 44033, #File start index
-
-    'fixLast': False, #Whether to add extra images at the end of a detector
-    'fixMedN': 0, #Number of extra images to add
-    'verbose': True, #Defaults to True if left unset, prints out extra information on where the code is
-}
-    '''
-    if isinstance(config, str):
-        with open(config,'r') as f:
-            config = yaml.safe_load(f)
-    elif isinstance(config, dict):
-        pass
-    else:
-        print(f'Input config must be dictionary or path to yaml file')
-        return
-    
-    logger = logging.getLogger()
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(fmt="%(asctime)s [PID %(process)d] %(message)s", datefmt="%H:%M:%S")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-    
-    # main loop
-    now = datetime.now()
-    print(50*' ', now.strftime("%H:%M:%S"))
-    startrunt = time.perf_counter()
-    fstart = config['startIdx']
-    FilePerMedian = int(config['NRot']/config['NMedian'])
-    
-    for ilayer in config['layerIdx']:
-        print('Layer number ', ilayer)
-        startlayert = time.perf_counter()
-        Ndeti = config['NDet']
-        print('Detector ', Ndeti)
-    
-        for idet in range(Ndeti):
-            tasks = []
-            fstart_local = fstart
-            fstart0 = config['startIdx'] + idet * config['NRot']
-    
-            with ProcessPoolExecutor(max_workers=40) as executor:
-                for imed in range(config['NMedian']):
-                    if config['fixLast'] and imed == config['NMedian'] - 1:
-                        numFiles = FilePerMedian + config['fixMedN']
-                    else:
-                        numFiles = FilePerMedian
-    
-                    tasks.append(executor.submit(
-                        process_median_block,
-                        ilayer, idet, imed, fstart_local, numFiles, config
-                    ))
-    
-                    fstart_local += numFiles
-    
-                for task in tasks:
-                    print(task.result())
-    
-            fstart = fstart_local  # update global fstart after parallel
-    
-        stoplayert = time.perf_counter()
-        print(10*' ', f'Finished layer {ilayer} in {stoplayert - startlayert:.2f} sec')
-        
-    return
 
 def median_background(initial,startIdx,outInitial, NRot=720, NDet=2,NLayer=1,layerIdx=[0],digitLength=6,end='.tif', imgshape=[2048,2048],logfile=None):
     '''
@@ -311,7 +43,7 @@ def median_background(initial,startIdx,outInitial, NRot=720, NDet=2,NLayer=1,lay
                 if logfile is not None:
                     logfile.write(f'layer: {layerIdx[layer]}, det: {det}, rot: {rot}, {fName} \n')
                 try:
-                    imgStack[:,:,rot] = tiff.imread(fName)
+                    imgStack[:,:,rot] = tifffile.imread(fName)
                     print('img loaded')
                 except FileNotFoundError:
                     print(f'FILE NOT FOUND!!! {fName}')
@@ -330,7 +62,7 @@ def median_background(initial,startIdx,outInitial, NRot=720, NDet=2,NLayer=1,lay
                 logfile.write(f'complete median filter \n')
             try:
                 np.save(f'{outInitial}_z{layerIdx[layer]}_det_{det}.npy', bkg)
-                tiff.imwrite(f'{outInitial}_z{layerIdx[layer]}_det_{det}.tiff', bkg.astype(np.int32))
+                tifffile.imwrite(f'{outInitial}_z{layerIdx[layer]}_det_{det}.tiff', bkg.astype(np.int32))
                 print(f'saved bkg as {outInitial}_z{layer}_det_{det}.tiff/npy \n')
                 if logfile is not None:
                     logfile.write(f'saved bkg as {outInitial}_z{layerIdx[layer]}_det_{det}.tiff/npy \n')
@@ -520,7 +252,7 @@ def reduce_image(initial,startIdx,bkgInitial,binInitial, NRot=720, NDet=2,NLayer
             for rot in range(NRot):
                 idx = layer * NDet * NRot + det * NRot + rot + startIdx
                 fName = f'{initial}{str(idx).zfill(digitLength)}{end}'
-                img = tiff.imread(fName)
+                img = tifffile.imread(fName)
                 binFileName = f'{binInitial}z{idxLayer[layer]}_{rot}.bin{det}'
                 print(binFileName)
                 snp = segmentation(img, bkg, baseline=baseline, minNPixel=minNPixel)
@@ -548,13 +280,13 @@ def integrate_tiff(tiffInitial, startIdx, digit, extention, NImage, NInt,outInit
         sys.stdout.flush()
         if i%NInt ==0:
             lTiff = []
-            lTiff.append(tiff.imread(fName))
+            lTiff.append(tifffile.imread(fName))
         else:
-            lTiff.append(tiff.imread(fName))
+            lTiff.append(tifffile.imread(fName))
         if len(lTiff) == NInt:
             outImg = np.sum(np.array(lTiff),axis=0).astype(np.int32)
             #print(outImg.shape)
-            tiff.imwrite(f'{outInitial}{(i//NInt+outStartIdx):0{digit}d}{extention}', outImg)
+            tifffile.imwrite(f'{outInitial}{(i//NInt+outStartIdx):0{digit}d}{extention}', outImg)
             sys.stdout.write(f'\r writing: {outInitial}{(i//NInt+outStartIdx):0{digit}d}{extention}')
             sys.stdout.flush()
 if  __name__ == '__main__':
@@ -572,7 +304,7 @@ if  __name__ == '__main__':
     end = '.tif'
     initial = '/home/heliu/work/shahani_feb19_part/nf_part/dummy_2_rt_before_heat_nf/dummy_2_rt_before_heat_nf_'
     fName = f'{initial}{startIdx:06d}{end}'
-    img = tiff.imread(fName)
+    img = tifffile.imread(fName)
     bkg = np.load('test_output_bkg_z0_det_0.npy')
     lX, lY, lIntensity, lID = segmentation(img, bkg)
     lX, lY, lIntensity, lID = segmentation_numba(img, bkg)

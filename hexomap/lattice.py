@@ -12,7 +12,7 @@ NOTE:
     orthorhombic, ortho
     tetragonal, tet
 2. When comparing orientation related quantities, it is better to restrict
-   them to the same referance frame, such as sample or lab frame.
+   them to the same reference frame, such as sample or lab frame.
 
 """
 
@@ -29,7 +29,7 @@ def in_fundamental_zone(o: "Orientation", lattice: str) -> bool:
     """
     Description
     -----------
-    Chekc if the orientation is in its fundamental zone by checking its
+    Check if the orientation is in its fundamental zone by checking its
     Rodrigues representation.
 
     Parameter

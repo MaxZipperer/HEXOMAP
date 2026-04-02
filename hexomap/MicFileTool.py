@@ -1,7 +1,7 @@
 '''
 Writen by He Liu
 Wed Apr 26 2017
-This script will contains the basic tool for reading mic file and plot them.
+This script contains the basic tool for reading mic file and plotting them.
 '''
 import numpy as np
 import matplotlib
@@ -96,7 +96,7 @@ def read_mic_file(fname):
         try:
             snp = np.array([[float(i) for i in s.split('\t')] for s in content[1:]])
         except ValueError:
-            print('unknown deliminater')
+            print('unknown delimiter')
 
     print('sw is {0} \n'.format(sw))
     print('shape of snp is {0}'.format(snp.shape))
@@ -238,7 +238,7 @@ def plot_misorien_square_mic(squareMicData, eulerIn,symType, angleRange=None,col
         angleRAnge: colorbar range
         colorbar:
         saveName:
-        outUnit:'degree' or 'raidan', the unit of output misorientation map
+        outUnit:'degree' or 'radian', the unit of output misorientation map
     Output:
         misorientation map,shape=[squareMicData.shape[0], squareMicData.shape[1]]
     '''
@@ -335,7 +335,7 @@ def plot_binary_snp(snp):
     plt.ylim((0,2048))
     plt.show()
 
-def plot_binary(rawInitial, NRot=180, NDet=2, idxRot=0,idxLayer=0):
+def plot_binary(rawInitial, NRot=180, NDet=2, idxRot=0,idxLayer=0,nDigit=6):
     '''
     visualize binary files, first column is single frame, second column is integrated frames
     '''
@@ -346,7 +346,8 @@ def plot_binary(rawInitial, NRot=180, NDet=2, idxRot=0,idxLayer=0):
         # single frame
         #idxRot = 0  # index of rotation (0~719)
         #idxLayer = 0
-        b=IntBin.ReadI9BinaryFiles(f'{rawInitial}{idxLayer}_{idxRotSingleFrame:06d}.bin{idxDet}')
+        #b=IntBin.ReadI9BinaryFiles(f'{rawInitial}{idxLayer}_{idxRotSingleFrame:06d}.bin{idxDet}')
+        b=IntBin.ReadI9BinaryFiles(f'{rawInitial}{idxLayer}_{str(idxRotSingleFrame).zfill(nDigit)}.bin{idxDet}')
         ax[0,idxDet].plot(2047-b[0],2047-b[1],'b.')
         ax[0,idxDet].axis('scaled')
         ax[0,idxDet].set_xlim((0,2048))
@@ -358,7 +359,8 @@ def plot_binary(rawInitial, NRot=180, NDet=2, idxRot=0,idxLayer=0):
         lY = []
         for idxRot in range(NRot):
             #print(b)
-            b = IntBin.ReadI9BinaryFiles(f'{rawInitial}{idxLayer}_{idxRot:06d}.bin{idxDet}')
+            #b = IntBin.ReadI9BinaryFiles(f'{rawInitial}{idxLayer}_{idxRot:06d}.bin{idxDet}')
+            b=IntBin.ReadI9BinaryFiles(f'{rawInitial}{idxLayer}_{str(idxRot).zfill(nDigit)}.bin{idxDet}')
             lX.append(b[0])
             lY.append(b[1])
         aX = np.concatenate(lX)
@@ -415,8 +417,8 @@ def plot_binary_with_tiff(fBin, img,alpha=0.5):
 def plot_mic_and_conf(squareMicData,minHitRatio,saveName=None,figSizeX=10,figSizeY=10):
     '''
     plot the square mic data
-    image already inverted, x-horizontal, y-vertical, x dow to up, y: left to right
-    :param squareMicData: [NVoxelX,NVoxelY,10], each Voxel conatains 10 columns:
+    image already inverted, x-horizontal, y-vertical, x down to up, y: left to right
+    :param squareMicData: [NVoxelX,NVoxelY,10], each Voxel contains 10 columns:
             0-2: voxelpos [x,y,z]
             3-5: euler angle
             6: hitratio
@@ -442,8 +444,8 @@ def plot_mic_and_conf(squareMicData,minHitRatio,saveName=None,figSizeX=10,figSiz
 def plot_square_mic(squareMicData,minHitRatio,saveName=None):
     '''
     plot the square mic data
-    image already inverted, x-horizontal, y-vertical, x dow to up, y: left to right
-    :param squareMicData: [NVoxelX,NVoxelY,10], each Voxel conatains 10 columns:
+    image already inverted, x-horizontal, y-vertical, x down to up, y: left to right
+    :param squareMicData: [NVoxelX,NVoxelY,10], each Voxel contains 10 columns:
             0-2: voxelpos [x,y,z]
             3-5: euler angle
             6: hitratio
@@ -467,8 +469,8 @@ def plot_square_mic(squareMicData,minHitRatio,saveName=None):
 def plot_square_mic_backup(squareMicData,minHitRatio,saveName=None):
     '''
     plot the square mic data
-    image already inverted, x-horizontal, y-vertical, x dow to up, y: left to right
-    :param squareMicData: [NVoxelX,NVoxelY,10], each Voxel conatains 10 columns:
+    image already inverted, x-horizontal, y-vertical, x down to up, y: left to right
+    :param squareMicData: [NVoxelX,NVoxelY,10], each Voxel contains 10 columns:
             0-2: voxelpos [x,y,z]
             3-5: euler angle
             6: hitratio
@@ -528,7 +530,7 @@ class MicFile():
             try:
                 snp = np.array([[float(i) for i in s.split('\t')] for s in content[1:]])
             except ValueError:
-                print('unknown deliminater')
+                print('unknown delimiter')
 
         print('sw is {0} \n'.format(sw))
         print('shape of snp is {0}'.format(snp.shape))

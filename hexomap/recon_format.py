@@ -3,7 +3,7 @@ transform file format
 .npy:
      numpy array, load with np.load()
 .ang: 
-    EBSD file format, referene: https://www.material.ntnu.no/ebsd/EBSD/OIM%20DC%207.2%20Manual.pdf, page 240.
+    EBSD file format, reference: https://www.material.ntnu.no/ebsd/EBSD/OIM%20DC%207.2%20Manual.pdf, page 240.
     # The fields of each line in the body of the file are as follows:
     # j1 F j2 x y IQ CI Phase ID Detector Intensity Fit
     # where:
@@ -34,7 +34,7 @@ def h5printR(item, leading = ''):
             print(leading + key)
             h5printR(item[key], leading + '  ')
 
-# Print structure of a `.h5` file            
+# Print structure of an `.h5` file            
 def h5print(filename):
     with h5py.File(filename, 'r') as h:
         print(filename)
