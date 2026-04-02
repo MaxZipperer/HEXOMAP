@@ -14,22 +14,23 @@ fadelity and efficiency.
 > the API is subjected to change in the final stable release.
 
 ## Installation (written for Ubuntu 24.04.4)
-It is assumed that you have installed miniconda. Instructions for this can be found at (https://www.anaconda.com/docs/getting-started/miniconda/install/overview)
+It is assumed that you have installed conda. Instructions for this can be found at (https://www.anaconda.com/docs/getting-started/miniconda/install/overview)
 
 
 1. Pull HEXOMAP from Git
-   * git clone https://github.com/MaxZipperer/HEXOMAP.git
-   * cd HEXOMAP
-2. Create the Conda Environment
-   * conda env create --file hexomap_env.yml --name env_name
+   * Navigate to the directory you want HEXOMAP to live in
+   * ```git clone https://github.com/MaxZipperer/HEXOMAP.git```
+   * ```cd HEXOMAP```
+3. Create the Conda Environment
+   * ```conda env create --file hexomap_env.yml --name env_name```
    * Change env_name to whatever you like
-   * conda activate env_name
-3. Install HEXOMAP
-   * python setup.py install
-4. Verify
+   * ```conda activate env_name```
+4. Install HEXOMAP
+   * ```python setup.py install```
+5. Verify
    * At the moment (at least for me) pycuda ignores local installation in favor of global installs
-   * export PYCUDA_DEFAULT_NVCC_FLAGS="-allow-unsupported-compiler -ccbin $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
-   * python -m hexomap
+   * ```export PYCUDA_DEFAULT_NVCC_FLAGS="-allow-unsupported-compiler -ccbin $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"```
+   * ```python -m hexomap```
    * You'll have to rerun the export step everytime after the conda activate step
 
 ## Usage and Examples
