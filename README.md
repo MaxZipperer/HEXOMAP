@@ -28,10 +28,15 @@ It is assumed that you have installed conda. Instructions for this can be found 
 4. Install HEXOMAP
    * ```python setup.py install```
 5. Verify
-   * At the moment (at least for me) pycuda ignores local installation in favor of global installs
-   * ```export PYCUDA_DEFAULT_NVCC_FLAGS="-allow-unsupported-compiler -ccbin $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"```
+   * At the moment pycuda ignores local installation in favor of global installs. To fix this you need to set the PYCUDA_DEFAULT_NVCC_FLAGS with ```export``` everytime you activate the environment or use the code below to automatically set this everytime.
+   * ```conda env config vars set PYCUDA_DEFAULT_NVCC_FLAGS="-allow-unsupported-compiler -ccbin $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"```
+   * ```conda deactivate```
+   * ```conda activate env_name```
+   * Now we can verify that HEXOMAP was installed correctly.
    * ```python -m hexomap```
-   * You'll have to rerun the export step everytime after the conda activate step
+6. Using Jupyter
+   * In order to use the environment as a python kernel run the line below and use your environment name and choose a display name.
+   * ```python -m ipykernel install --user --name env_name --display-name "disp_name"```
 
 ## Usage and Examples
 1. reconstruction	
