@@ -13,7 +13,7 @@ fadelity and efficiency.
 > This GPU-based reconstruction toolkit is currently under development, and
 > the API is subjected to change in the final stable release.
 
-## Installation (written for Linux)
+## Installation (written for Ubuntu 24.04.4)
 It is assumed that you have installed miniconda. Instructions for this can be found at (https://www.anaconda.com/docs/getting-started/miniconda/install/overview)
 
 
