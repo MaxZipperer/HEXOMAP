@@ -6,6 +6,9 @@ Spatially tiles the reconstruction region across independent worker processes
 (one CUDA context per GPU), runs serial_recon_multi_stage on each tile, merges
 results by hit-ratio confidence, then runs a final post-process pass on GPU 0.
 
+Workers are launched as separate Python subprocesses so the parent never
+initializes CUDA (which would otherwise serialize GPU access).
+
 Example:
     python scripts/recon_multigpu.py --config examples/ConfigExample.yml
     python scripts/recon_multigpu.py -c my_config.h5 -n 4 --gpus 0,1,2,3
@@ -15,10 +18,11 @@ Example:
 from __future__ import annotations
 
 import argparse
-import multiprocessing as mp
 import os
+import subprocess
 import sys
 import tempfile
+import time
 from typing import List, Optional, Sequence
 
 import numpy as np
@@ -47,7 +51,7 @@ DEFAULT_DEMO_CONFIG = {
     'detK': np.array([[2015.95118521, 2014.30163539]]),
     'detRot': np.array([[[89.48560133, 89.53313565, -0.50680978],
                          [89.42516322, 89.22570012, -0.45511278]]]),
-    'fileBin': None,  # set in main when using demo defaults
+    'fileBin': None,
     'fileBinDigit': 6,
     'fileBinDetIdx': np.array([0, 1]),
     'fileBinLayerIdx': 0,
@@ -109,22 +113,7 @@ def gen_tile_masks(
     halo: int = 5,
     mode: str = 'auto',
 ) -> List[np.ndarray]:
-    """
-    Build per-worker boolean masks that tile the reconstruction region.
-
-    Parameters
-    ----------
-    imgsize
-        Microstructure grid size [nx, ny].
-    n_workers
-        Number of GPU workers.
-    mask
-        Optional base mask (True = reconstruct). Defaults to all True.
-    halo
-        Overlap in voxels between adjacent tiles so flood fill can propagate.
-    mode
-        'auto', 'horizontal', or 'grid'.
-    """
+    """Build per-worker boolean masks that tile the reconstruction region."""
     imgsize = tuple(int(x) for x in imgsize)
     base_mask = _normalize_base_mask(mask, imgsize)
 
@@ -204,31 +193,19 @@ def merge_tile_results(tile_results: Sequence[np.ndarray]) -> np.ndarray:
 
 
 def _parse_gpu_ids(gpu_arg: Optional[str], n_workers: int) -> List[int]:
-    import pycuda.driver as cuda
+    """
+    Resolve GPU ids without initializing CUDA in the parent process.
 
-    cuda.init()
-    n_available = cuda.Device.count()
-    if n_available == 0:
-        raise RuntimeError("No CUDA devices found")
-
+    Parent CUDA initialization is the most common reason multi-GPU workers run
+    serially when using multiprocessing pools with PyCUDA.
+    """
     if gpu_arg:
         gpu_ids = [int(x.strip()) for x in gpu_arg.split(',') if x.strip() != '']
         if len(gpu_ids) != n_workers:
             raise ValueError(
                 f"--gpus lists {len(gpu_ids)} device(s) but -n requests {n_workers}"
             )
-        for gpu_id in gpu_ids:
-            if gpu_id < 0 or gpu_id >= n_available:
-                raise ValueError(
-                    f"GPU {gpu_id} is out of range; available devices: 0..{n_available - 1}"
-                )
         return gpu_ids
-
-    if n_workers > n_available:
-        raise ValueError(
-            f"Requested {n_workers} workers but only {n_available} GPU(s) are available. "
-            "Pass --gpus explicitly to assign multiple workers per device."
-        )
     return list(range(n_workers))
 
 
@@ -262,14 +239,16 @@ def _recon_worker(
     gpu_id: int,
     config_path: Optional[str],
     reconstructor_config_path: Optional[str],
-    tile_mask: np.ndarray,
+    tile_mask_path: str,
     initial_string: str,
     output_path: str,
     enable_post_process: bool,
-) -> str:
+) -> None:
     """Run serial reconstruction for one spatial tile on a dedicated GPU."""
     import pycuda.driver as cuda
     from hexomap import config, reconstruction
+
+    tile_mask = np.load(tile_mask_path)
 
     cuda.init()
     ctx = cuda.Device(gpu_id).make_context()
@@ -294,9 +273,9 @@ def _recon_worker(
         c.micMask = tile_mask
         c._initialString = f"{initial_string}_part_{worker_id}"
 
-        print(f"[worker {worker_id}] GPU {gpu_id}: loading config, "
-              f"{int(np.sum(tile_mask))} voxels in tile")
-        sys.stdout.flush()
+        started = time.time()
+        print(f"[worker {worker_id}] GPU {gpu_id}: pid={os.getpid()}, "
+              f"{int(np.sum(tile_mask))} voxels in tile", flush=True)
 
         recon = reconstruction.Reconstructor_GPU(ctx=ctx)
         if c_reconstructor is not None:
@@ -305,9 +284,9 @@ def _recon_worker(
         recon.serial_recon_multi_stage(enablePostProcess=enable_post_process)
 
         np.save(output_path, recon.squareMicData)
-        print(f"[worker {worker_id}] GPU {gpu_id}: saved tile result to {output_path}")
-        sys.stdout.flush()
-        return output_path
+        elapsed = time.time() - started
+        print(f"[worker {worker_id}] GPU {gpu_id}: finished in {elapsed:.1f}s, "
+              f"saved {output_path}", flush=True)
     finally:
         ctx.pop()
 
@@ -320,9 +299,9 @@ def _final_postprocess(
     base_mask: Optional[np.ndarray],
     initial_string: str,
 ) -> None:
-    """Merge-aware cleanup pass on a single GPU (matches recon_mpi rank-0 behavior)."""
+    """Merge-aware cleanup pass on a single GPU."""
     import pycuda.driver as cuda
-    from hexomap import config, reconstruction
+    from hexomap import reconstruction
 
     cuda.init()
     ctx = cuda.Device(gpu_id).make_context()
@@ -334,12 +313,61 @@ def _final_postprocess(
         recon = reconstruction.Reconstructor_GPU(ctx=ctx)
         if c_reconstructor is not None:
             recon.load_reconstructor_config(c_reconstructor)
-        recon.load_config(c, reloadData=False)
+        # Must upload experimental data: post_process calls GPU hitratio kernels.
+        recon.load_config(c, reloadData=True)
         recon.load_square_mic(merged_mic)
         recon.voxelIdxStage0 = []
         recon.serial_recon_multi_stage(enablePostProcess=True)
     finally:
         ctx.pop()
+
+
+def _launch_worker_subprocess(
+    script_path: str,
+    worker_id: int,
+    gpu_id: int,
+    config_path: Optional[str],
+    reconstructor_config_path: Optional[str],
+    tile_mask_path: str,
+    initial_string: str,
+    output_path: str,
+    enable_post_process: bool,
+) -> subprocess.Popen:
+    cmd = [
+        sys.executable, '-u', script_path,
+        '--_worker',
+        '--worker-id', str(worker_id),
+        '--gpu-id', str(gpu_id),
+        '--tile-mask', tile_mask_path,
+        '--output', output_path,
+        '--initial-string', initial_string,
+    ]
+    if not enable_post_process:
+        cmd.append('--no-tile-postprocess')
+    if config_path:
+        cmd.extend(['-c', config_path])
+    if reconstructor_config_path:
+        cmd.extend(['-r', reconstructor_config_path])
+
+    return subprocess.Popen(cmd)
+
+
+def _worker_main(args: argparse.Namespace) -> int:
+    _recon_worker(
+        worker_id=args.worker_id,
+        gpu_id=args.gpu_id,
+        config_path=args.config if args.config != 'no config' else None,
+        reconstructor_config_path=(
+            args.reconstructor_config
+            if args.reconstructor_config != 'no config'
+            else None
+        ),
+        tile_mask_path=args.tile_mask,
+        initial_string=args.initial_string,
+        output_path=args.output,
+        enable_post_process=not args.no_tile_postprocess,
+    )
+    return 0
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -397,7 +425,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         action='store_true',
         help='Disable post-process inside each tile worker',
     )
+    parser.add_argument('--_worker', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--worker-id', type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--gpu-id', type=int, help=argparse.SUPPRESS)
+    parser.add_argument('--tile-mask', help=argparse.SUPPRESS)
+    parser.add_argument('--output', help=argparse.SUPPRESS)
+    parser.add_argument('--initial-string', default='hexomap', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+
+    if args._worker:
+        return _worker_main(args)
 
     if args.ngpus < 1:
         parser.error("--ngpus must be at least 1")
@@ -435,47 +472,65 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for i, tile in enumerate(tile_masks):
         print(f"  tile {i}: {int(np.sum(tile))} voxels")
 
-    config_path_for_workers = config_path
-    if config_path_for_workers is None:
-        # Workers need a concrete config file when using built-in demo settings.
-        # Parent already printed the demo config; workers reload the same demo dict.
-        config_path_for_workers = None
-
+    script_path = os.path.abspath(__file__)
     tmp_dir = tempfile.mkdtemp(prefix='hexomap_multigpu_')
+    mask_paths = [
+        os.path.join(tmp_dir, f'tile_mask_{i}.npy') for i in range(args.ngpus)
+    ]
     output_paths = [
         os.path.join(tmp_dir, f'tile_{i}.npy') for i in range(args.ngpus)
     ]
+    for mask, path in zip(tile_masks, mask_paths):
+        np.save(path, mask)
 
-    worker_args = [
-        (
-            i,
-            gpu_ids[i],
-            config_path_for_workers,
+    wall_start = time.time()
+    if args.ngpus == 1:
+        _recon_worker(
+            0,
+            gpu_ids[0],
+            config_path,
             reconstructor_config_path,
-            tile_masks[i],
+            mask_paths[0],
             initial_string,
-            output_paths[i],
+            output_paths[0],
             not args.no_tile_postprocess,
         )
-        for i in range(args.ngpus)
-    ]
-
-    if args.ngpus == 1:
-        _recon_worker(*worker_args[0])
-        tile_results = [np.load(output_paths[0])]
+        tile_elapsed = [time.time() - wall_start]
     else:
-        ctx = mp.get_context('spawn')
-        with ctx.Pool(processes=args.ngpus) as pool:
-            pool.starmap(_recon_worker, worker_args)
-        tile_results = [np.load(path) for path in output_paths]
+        print(f"Launching {args.ngpus} parallel worker subprocesses ...", flush=True)
+        processes = [
+            _launch_worker_subprocess(
+                script_path,
+                i,
+                gpu_ids[i],
+                config_path,
+                reconstructor_config_path,
+                mask_paths[i],
+                initial_string,
+                output_paths[i],
+                not args.no_tile_postprocess,
+            )
+            for i in range(args.ngpus)
+        ]
+        exit_codes = [proc.wait() for proc in processes]
+        tile_elapsed = [time.time() - wall_start]
+        if any(code != 0 for code in exit_codes):
+            raise RuntimeError(
+                f"One or more workers failed with exit codes: {exit_codes}"
+            )
 
+    wall_tile_time = time.time() - wall_start
+    print(f"All tile workers finished in {wall_tile_time:.1f}s wall time", flush=True)
+
+    tile_results = [np.load(path) for path in output_paths]
     merged_mic = merge_tile_results(tile_results)
     merged_path = os.path.join(tmp_dir, 'merged_square_mic.npy')
     np.save(merged_path, merged_mic)
     print(f"Merged tile results saved to {merged_path}")
 
     if not args.no_final_pass:
-        print(f"Running final post-process on GPU {gpu_ids[0]} ...")
+        print(f"Running final post-process on GPU {gpu_ids[0]} ...", flush=True)
+        final_start = time.time()
         _final_postprocess(
             gpu_ids[0],
             config_path,
@@ -484,18 +539,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             base_mask,
             initial_string,
         )
-        print("Final post-process complete.")
+        print(f"Final post-process complete in {time.time() - final_start:.1f}s.")
 
     if args.keep_tiles:
         print(f"Per-tile outputs kept in {tmp_dir}")
     else:
-        for path in output_paths:
+        for path in output_paths + mask_paths:
             try:
                 os.remove(path)
             except OSError:
                 pass
         print(f"Temporary tile files removed; merged output kept at {merged_path}")
 
+    print(f"Total wall time: {time.time() - wall_start:.1f}s")
     return 0
 
 
