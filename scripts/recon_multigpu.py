@@ -29,8 +29,8 @@ import numpy as np
 
 
 DEFAULT_DEMO_CONFIG = {
-    'micsize': np.array([20, 20]),
-    'micVoxelSize': 0.01,
+    'micsize': np.array([50, 50]),
+    'micVoxelSize': 0.004,
     'micShift': np.array([0.0, 0.0, 0.0]),
     'micMask': None,
     'expdataNDigit': 6,
