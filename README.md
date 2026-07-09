@@ -41,14 +41,6 @@ fadelity and efficiency.
    python -m hexomap
    ```
 
-### Legacy install (Python 3.9 / CUDA 11.5)
-
-The pinned `hexomap_env.yml` environment targets Python 3.9 and CUDA 11.5.
-Use `python setup.py install` after activating that environment.
-
-> **Note:** CUDA 12+ removed texture references. HEXOMAP now uses bindless
-> texture objects in its CUDA kernels, which is required for CUDA 12/13.
-
 ## Usage and Examples
 1. reconstruction	
     * see jupyter notebook: demonotebooks/*, it contains a full recontruction step ( parameter optimization and recosntruction).
