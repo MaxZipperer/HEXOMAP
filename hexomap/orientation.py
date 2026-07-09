@@ -579,10 +579,10 @@ class Frame:
         either through inheritance, or simply taking advantage of the dynamic
         typing.
     """
-    e1: np.ndarray = np.array([1, 0, 0])
-    e2: np.ndarray = np.array([0, 1, 0])
-    e3: np.ndarray = np.array([0, 0, 1])
-    o:  np.ndarray = np.array([0, 0, 0])
+    e1: np.ndarray = field(default_factory=lambda: np.array([1, 0, 0]))
+    e2: np.ndarray = field(default_factory=lambda: np.array([0, 1, 0]))
+    e3: np.ndarray = field(default_factory=lambda: np.array([0, 0, 1]))
+    o:  np.ndarray = field(default_factory=lambda: np.array([0, 0, 0]))
     name: str = "lab"
 
     @property

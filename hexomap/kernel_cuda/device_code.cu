@@ -176,7 +176,7 @@ __global__ void simulation(int *aiJ, int *aiK, float *afOmega, bool *abHit,int *
 		const int iNVoxel, const int iNOrientation, const int iNG, const int iNDet,
 		const float* afOrientation,const float* afVoxelPos,
 		const float fBeamEnergy, const float fEtaLimit, const float* __restrict__ afDetInfo,
-		cudaTextureObject_t texG){
+		const float* __restrict__ afG){
 	/*
 	 * int aiJ: output of J values,len =  iNVoxel*iNOrientation*iNG*2*iNDet
 				basic unit iNVoxel*iNOrientation*iNG*[omega0 of det0, omega0 of det1,omega1,det0,omega1,det1]...
@@ -199,7 +199,7 @@ __global__ void simulation(int *aiJ, int *aiK, float *afOmega, bool *abHit,int *
 	float afScatteringVec[3]={0,0,0};
 	for (int i=0;i<3;i++){
 		for(int j=0;j<3;j++){
-		    afScatteringVec[i] += afOrientation[blockIdx.x*gridDim.y*9+blockIdx.y*9+i*3+j]*tex2D<float>(texG,(float)j,(float)threadIdx.x);
+		    afScatteringVec[i] += afOrientation[blockIdx.x*gridDim.y*9+blockIdx.y*9+i*3+j]*afG[threadIdx.x*3+j];
 		}
 	}
 	if(GetScatteringOmegas( fOmegaRes1, fOmegaRes2, fTwoTheta, fEta, fChi , afScatteringVec,fBeamEnergy)){
@@ -247,7 +247,8 @@ __global__ void create_bin_expimages(char* acExpDetImages, const int* aiDetStart
 __global__ void hitratio_multi_detector(const int iNVoxel,const int iNOrientation,const int iNG,
 		const float* __restrict__ afDetInfo, const int iNDet,const int iNRot,
 		const int* aiJ, const int* aiK,const int* aiRotN, const bool* abHit,
-		float* afHitRatio, int* aiPeakCnt, cudaTextureObject_t texExp){
+		float* afHitRatio, int* aiPeakCnt,
+		const unsigned char* __restrict__ acExpData, const int iExpNK, const int iExpNJ){
 	/*
 	 * 100x100 voxel takes 13.8123515625s
 	 * This version using texture memory to storage tcExpData
@@ -291,7 +292,10 @@ __global__ void hitratio_multi_detector(const int iNVoxel,const int iNOrientatio
             k = 0;
             while(allTrue1 && k<iNDet){
                 idx = i*iNG*2*iNDet+j*iNDet+k;
-                allTrue1 *= tex3D<unsigned char>(texExp,(float)aiJ[idx], (float)aiK[idx],(float)(k*iNRot + aiRotN[idx]) );
+                int iz = k*iNRot + aiRotN[idx];
+                int iy = aiK[idx];
+                int ix = aiJ[idx];
+                allTrue1 *= acExpData[iz*iExpNK*iExpNJ + iy*iExpNJ + ix];
                 k += 1;
             }
             iPeakCnt += allTrue0;

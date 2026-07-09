@@ -12,6 +12,17 @@ from functools import singledispatch
 from functools import update_wrapper
 
 
+def _normalize_h5_value(value):
+    """Convert HDF5 byte-string scalars to Python str."""
+    if isinstance(value, (bytes, np.bytes_)):
+        return bytes(value).decode('utf-8')
+    if isinstance(value, np.ndarray) and value.dtype.kind == 'S':
+        if value.ndim == 0:
+            return value.tobytes().decode('utf-8').rstrip('\x00')
+        return np.char.decode(value.astype('S'), encoding='utf-8')
+    return value
+
+
 def load_kernel_code(filename):
     """return the cuda source code"""
     with open(filename, 'r') as f:
@@ -125,7 +136,7 @@ def recursively_load_dict_contents_from_group(h5file: "h5py.File",
     ans = {}
     for key, item in h5file[path].items():
         if isinstance(item, h5py.Dataset):
-            ans[key] = item[()]
+            ans[key] = _normalize_h5_value(item[()])
         elif isinstance(item, h5py.Group):
             ans[key] = recursively_load_dict_contents_from_group(h5file, f"{path}{key}/")
     return ans

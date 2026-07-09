@@ -7,7 +7,7 @@ Module of components for virtual diffraction.
 import os
 import yaml
 import numpy as np
-from dataclasses         import dataclass
+from dataclasses         import dataclass, field
 from itertools           import product
 from hexomap.orientation import Frame
 from hexomap.npmath      import norm
@@ -37,7 +37,7 @@ MATS_DIR = os.path.join(DATA_DIR, 'materials')
 
 @dataclass
 class Detector:
-    frame:     "Frame" = STD_FRAMES["Detector"]
+    frame:     "Frame" = field(default_factory=lambda: STD_FRAMES["Detector"])
     resolution: tuple  = (2048, 2048)           # number of pixels
     pix_size:   tuple  = (0.00148, 0.00148)     # mm or m?
 
