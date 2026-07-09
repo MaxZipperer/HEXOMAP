@@ -11,7 +11,6 @@ optional arguments:
   -g GPU, --gpu GPU     which gpu to use(0-4)
 '''
 import sys
-sys.path.insert(0, '/home/heliu/work/dev/v0.2/HEXOMAP/')
 import numpy as np
 import os
 import hexomap

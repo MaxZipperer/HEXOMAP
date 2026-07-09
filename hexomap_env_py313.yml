@@ -1,0 +1,21 @@
+name: hexomap
+channels:
+  - conda-forge
+  - nvidia
+dependencies:
+  - python>=3.13
+  - cuda-toolkit>=13.0
+  - numpy>=1.26
+  - scipy>=1.11
+  - matplotlib>=3.8
+  - numba>=0.60
+  - h5py>=3.10
+  - pyyaml>=6.0
+  - opencv>=4.8
+  - tifffile>=2023.0
+  - mpi4py>=3.1
+  - tqdm>=4.31
+  - docopt>=0.6.2
+  - pip
+  - pip:
+      - pycuda>=2024.1

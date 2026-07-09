@@ -30,12 +30,13 @@ import random
 import scipy.ndimage as ndi
 import os.path
 import sys
-import scipy.misc
 import importlib
 from weakref import WeakValueDictionary
 import h5py
 from hexomap.utility import print_h5
 from hexomap import MicFileTool
+from hexomap.cuda_texture import CudaTextureObject
+from hexomap.cuorientations import misorien
 #global ctx
 #ctx = None
 #cuda.init()
@@ -217,20 +218,9 @@ class Reconstructor_GPU():
         self.euler_zxz_to_mat_gpu = self.mod.get_function("euler_zxz_to_mat")
         # GPU random generator
         self.randomGenerator = MRG32k3aRandomNumberGenerator()
-        # initialize device parameters and outputs
-        #self.afGD = gpuarray.to_gpu(self.sample.Gs.astype(np.float32))
-        # initialize tfG
-        self.ctx.push()
-        self.tfG = self.mod.get_texref("tfG")
-        self.ctx.pop()
-        #self.ctx.push()
-        #self.tfG.set_array(cuda.np_to_array(self.sample.Gs.astype(np.float32),order='C'))
-        #self.tfG.set_flags(cuda.TRSA_OVERRIDE_FORMAT)
-        #self.ctx.pop()
-        self.ctx.push()
-        self.texref = self.mod.get_texref("tcExpData")
-        self.ctx.pop()
-        self.texref.set_flags(cuda.TRSA_OVERRIDE_FORMAT)
+        # texture objects (bindless API required for CUDA 12+)
+        self._tfG_tex = CudaTextureObject()
+        self._texExp_tex = CudaTextureObject()
         #print(self.sample.Gs.shape)
         #self.afDetInfoD = gpuarray.to_gpu(self.afDetInfoH.astype(np.float32))
         #self.ctx.pop()
@@ -287,8 +277,7 @@ class Reconstructor_GPU():
         print(f'maxQ: {self.maxQ}, minQ: {self.minQ}, NG: {self.NG}')
         if self.NG==0:
             raise ValueError(f'NG is 0, please check lattice constant(in Angstrom) and maxQ!')
-        self.tfG.set_array(cuda.np_to_array(self.sample.Gs.astype(np.float32),order='C'))
-        self.tfG.set_flags(cuda.TRSA_OVERRIDE_FORMAT)
+        self._tfG_tex.bind_2d_float(self.sample.Gs)
 
     def set_det_param(self,L,J,K, rot,
                       NJ=[2048,2048,2048],NK=[2048,2048,2048],
@@ -1463,8 +1452,7 @@ class Reconstructor_GPU():
         self.__create_acExpDataCpuRam()
         #print('start of creating texture memory')
         # self.texref = mod.get_texref("tcExpData")
-        self.texref.set_array(cuda.np_to_array(self.acExpDataCpuRam, order='C'))
-        self.texref.set_flags(cuda.TRSA_OVERRIDE_FORMAT)
+        self._texExp_tex.bind_3d_uint8(self.acExpDataCpuRam)
         # del self.acExpDetImages
         #print('end of creating texture memory')
         # del self.acExpDetImages
@@ -1976,7 +1964,8 @@ class Reconstructor_GPU():
         self.sim_func(aiJD, aiKD, afOmegaD, abHitD, aiRotND, \
                       np.int32(NVoxel), np.int32(NOriPerVoxel), np.int32(self.NG), np.int32(self.NDet), afOrientationMatD,
                       afVoxelPosD, np.float32(self.energy), np.float32(self.etalimit), self.afDetInfoD,
-                      texrefs=[self.tfG], grid=(int(NVoxel), int(NOriPerVoxel)), block=(int(self.NG), 1, 1))
+                      self._tfG_tex.as_kernel_arg(),
+                      grid=(int(NVoxel), int(NOriPerVoxel)), block=(int(self.NG), 1, 1))
         #context.synchronize()
         self.ctx.synchronize()
         end.record()
@@ -2051,14 +2040,15 @@ class Reconstructor_GPU():
                               np.int32(NVoxel), np.int32(NSearchOrien), np.int32(self.NG), np.int32(self.NDet),
                               rotMatSearchD,
                               afVoxelPosD, np.float32(self.energy), np.float32(self.etalimit), self.afDetInfoD,
-                              texrefs=[self.tfG], grid=(NVoxel, NSearchOrien), block=(self.NG, 1, 1))
+                              self._tfG_tex.as_kernel_arg(),
+                              grid=(NVoxel, NSearchOrien), block=(self.NG, 1, 1))
 
                 # this is the most time cosuming part, 0.03s per iteration
                 self.hitratio_func(np.int32(NVoxel), np.int32(NSearchOrien), np.int32(self.NG),
                                    self.afDetInfoD, np.int32(self.NDet),
                                    np.int32(self.NRot),
                                    aiJD, aiKD, aiRotND, abHitD,
-                                   afHitRatioD, aiPeakCntD,texrefs=[self.texref],
+                                   afHitRatioD, aiPeakCntD, self._texExp_tex.as_kernel_arg(),
                                    block=(NBlock, 1, 1), grid=((NVoxel * NSearchOrien - 1) // NBlock + 1, 1))
 
                 self.ctx.synchronize()
@@ -2099,14 +2089,15 @@ class Reconstructor_GPU():
                               np.int32(NVoxel), np.int32(NSearchOrien), np.int32(self.NG), np.int32(self.NDet),
                               rotMatSearchD,
                               afVoxelPosD, np.float32(self.energy), np.float32(self.etalimit), self.afDetInfoD,
-                              texrefs=[self.tfG], grid=(NVoxel, NSearchOrien), block=(self.NG, 1, 1))
+                              self._tfG_tex.as_kernel_arg(),
+                              grid=(NVoxel, NSearchOrien), block=(self.NG, 1, 1))
 
                 # this is the most time cosuming part, 0.03s per iteration
                 self.hitratio_func(np.int32(NVoxel), np.int32(NSearchOrien), np.int32(self.NG),
                                    self.afDetInfoD, np.int32(self.NDet),
                                    np.int32(self.NRot),
                                    aiJD, aiKD, aiRotND, abHitD,
-                                   afHitRatioD, aiPeakCntD,texrefs=[self.texref],
+                                   afHitRatioD, aiPeakCntD, self._texExp_tex.as_kernel_arg(),
                                    block=(NBlock, 1, 1), grid=((NVoxel * NSearchOrien - 1) // NBlock + 1, 1))
 
                 # print('finish sim')
@@ -2169,7 +2160,8 @@ class Reconstructor_GPU():
                       np.int32(NVoxel), np.int32(NOrientation), np.int32(self.NG), np.int32(self.NDet),
                       rotMatSearchD,
                       afVoxelPosD, np.float32(self.energy), np.float32(self.etalimit), self.afDetInfoD,
-                      texrefs=[self.tfG], grid=(NVoxel, NOrientation), block=(self.NG, 1, 1))
+                      self._tfG_tex.as_kernel_arg(),
+                      grid=(NVoxel, NOrientation), block=(self.NG, 1, 1))
         afHitRatioD = cuda.mem_alloc(NVoxel * NOrientation * np.float32(0).nbytes)
         aiPeakCntD = cuda.mem_alloc(NVoxel * NOrientation * np.int32(0).nbytes)
         NBlock = 256
@@ -2177,7 +2169,7 @@ class Reconstructor_GPU():
                            self.afDetInfoD, np.int32(self.NDet),
                            np.int32(self.NRot),
                            aiJD, aiKD, aiRotND, abHitD,
-                           afHitRatioD, aiPeakCntD,texrefs=[self.texref],
+                           afHitRatioD, aiPeakCntD, self._texExp_tex.as_kernel_arg(),
                            block=(NBlock, 1, 1), grid=((NVoxel * NOrientation - 1) // NBlock + 1, 1))
         # print('finish sim')
         # memcpy_dtoh
@@ -2441,7 +2433,7 @@ class Reconstructor_GPU():
         #self.ctx.pop()
         #atexit.unregister(self.ctx.pop)
         #self.ctx.detach()
-        self.texref.set_array(cuda.np_to_array(np.zeros([3,3,3]).astype(np.uint8), order='C'))
+        self._texExp_tex.bind_3d_uint8(np.zeros([3, 3, 3], dtype=np.uint8))
         
 def test_new_post_process():
     from hexomap import MicFileTool     # io for reconstruction rst

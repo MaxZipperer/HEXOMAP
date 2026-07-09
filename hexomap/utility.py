@@ -124,9 +124,9 @@ def recursively_load_dict_contents_from_group(h5file: "h5py.File",
     """recursively load data from HDF5 archive as dict"""
     ans = {}
     for key, item in h5file[path].items():
-        if isinstance(item, h5py._hl.dataset.Dataset):
+        if isinstance(item, h5py.Dataset):
             ans[key] = item[()]
-        elif isinstance(item, h5py._hl.group.Group):
+        elif isinstance(item, h5py.Group):
             ans[key] = recursively_load_dict_contents_from_group(h5file, f"{path}{key}/")
     return ans
 

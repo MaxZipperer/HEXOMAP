@@ -23,8 +23,8 @@ def npy2h5(lFName, h5Name, material,lLayerIdx, q=11):
     with h5py.File(h5Name,'w') as fout:
         md=fout.create_group('meta_data')
         sls=fout.create_group('slices')
-        md.create_dataset('material',data=np.string_(material))
-        md.create_dataset('maxQ',data=np.int_(q))
+        md.create_dataset('material', data=np.bytes_(material.encode('ascii')))
+        md.create_dataset('maxQ', data=np.int64(q))
         for i,f in enumerate(lFName):
             print(i,f)
             grp=sls.create_group('z{:d}'.format(lLayerIdx[i]))

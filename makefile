@@ -6,7 +6,7 @@
 # run test on hexomap support modules
 test:
 	@echo "Running test on all supporting modules of hexomap"
-	@nosetests -v hexomap/tests
+	@python -m pytest hexomap/tests -v
 
 
 # install dependencies

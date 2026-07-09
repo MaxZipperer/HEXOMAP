@@ -13,30 +13,41 @@ fadelity and efficiency.
 > This GPU-based reconstruction toolkit is currently under development, and
 > the API is subjected to change in the final stable release.
 
-## Installation (written for Ubuntu 24.04.4)
-It is assumed that you have installed conda. Instructions for this can be found at (https://www.anaconda.com/docs/getting-started/miniconda/install/overview)
+## Installation
 
+### Python 3.13+ and CUDA 12+ (recommended)
 
-1. Pull HEXOMAP from Git
-   * Navigate to the directory you want HEXOMAP to live in
-   * ```git clone https://github.com/MaxZipperer/HEXOMAP.git```
-   * ```cd HEXOMAP```
-3. Create the Conda Environment
-   * ```conda env create --file hexomap_env.yml --name env_name```
-   * Change env_name to whatever you like
-   * ```conda activate env_name```
-4. Install HEXOMAP
-   * ```python setup.py install```
-5. Verify
-   * At the moment pycuda ignores local installation in favor of global installs. To fix this you need to set the PYCUDA_DEFAULT_NVCC_FLAGS with ```export``` everytime you activate the environment or use the code below to automatically set this everytime.
-   * ```conda env config vars set PYCUDA_DEFAULT_NVCC_FLAGS="-allow-unsupported-compiler -ccbin $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"```
-   * ```conda deactivate```
-   * ```conda activate env_name```
-   * Now we can verify that HEXOMAP was installed correctly.
-   * ```python -m hexomap```
-6. Using Jupyter
-   * In order to use the environment as a python kernel run the line below and use your environment name and choose a display name.
-   * ```python -m ipykernel install --user --name env_name --display-name "disp_name"```
+1. Clone the repository and enter the directory:
+   ```bash
+   git clone https://github.com/MaxZipperer/HEXOMAP.git
+   cd HEXOMAP
+   ```
+2. Create a conda environment with Python 3.13 and CUDA 13:
+   ```bash
+   conda env create -f hexomap_env_py313.yml -n hexomap
+   conda activate hexomap
+   ```
+3. Install HEXOMAP:
+   ```bash
+   pip install -e .
+   ```
+4. If NVCC rejects your compiler, set PyCUDA flags (Linux example):
+   ```bash
+   conda env config vars set PYCUDA_DEFAULT_NVCC_FLAGS="-allow-unsupported-compiler -ccbin $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++"
+   conda deactivate && conda activate hexomap
+   ```
+5. Verify:
+   ```bash
+   python -m hexomap
+   ```
+
+### Legacy install (Python 3.9 / CUDA 11.5)
+
+The pinned `hexomap_env.yml` environment targets Python 3.9 and CUDA 11.5.
+Use `python setup.py install` after activating that environment.
+
+> **Note:** CUDA 12+ removed texture references. HEXOMAP now uses bindless
+> texture objects in its CUDA kernels, which is required for CUDA 12/13.
 
 ## Usage and Examples
 1. reconstruction	
