@@ -12,5 +12,5 @@ setup(name='hexomap',
       version='0.3',
       packages=find_packages(),
       package_data={'hexomap': ['data/fundamental_zone/*','data/materials/*','kernel_cuda/*']+extra_files},
-      scripts=['scripts/recon_mpi.py','scripts/reduction.py','scripts/recon.py'],
+      scripts=['scripts/recon_mpi.py','scripts/recon_multigpu.py','scripts/reduction.py','scripts/recon.py'],
       )
