@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hexomap"
-version = "0.3"
+version = "0.4"
 description = "High Energy X-ray Orientation Mapping"
 readme = "README.md"
 requires-python = ">=3.9"

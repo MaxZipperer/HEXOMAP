@@ -1474,6 +1474,28 @@ class Reconstructor_GPU():
             self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/hexagonal.dat'))
         elif self.sample.symtype=='Tetragonal':
             self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/tetragonal.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(1,2+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/triclinic.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(3,15+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/monoclinic.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(16,74+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/orthorhombic.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(75,88+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/tetragonal_lower.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(89,142+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/tetragonal.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(143,148+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/trigonal_lower.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(149,167+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/trigonal.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(168,176+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/hexagonal_lower.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(177,194+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/hexagonal.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(195,206+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/cubic_lower.dat'))
+        elif self.sample.symtype in [str(spg) for spg in range(207,230+1)]:
+            self.__load_fz(os.path.join(os.path.dirname(hexomap.__file__), 'data/fundamental_zone/cubic.dat'))
         else:
             raise NotImplementedError('other symtype FZ not implemented')
         if self.additionalFZ is not None:

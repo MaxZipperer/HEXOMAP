@@ -283,7 +283,7 @@ def GetSymRotMat(symtype='Cubic'):
     m:  ndarray
         A three dimensional numpy array, which has the shape (n,3,3).
     """
-    if symtype == 'Cubic':
+    if symtype == 'Cubic' or symtype in [str(spg) for spg in range(207,230+1)]:
         m = np.zeros((24, 3, 3))
         m[0][0, 1] = 1
         m[0][1, 0] = -1
@@ -382,7 +382,8 @@ def GetSymRotMat(symtype='Cubic'):
         m[23][2, 2] = 1
 
         return m
-    elif symtype == 'Hexagonal':
+    
+    elif symtype == 'Hexagonal' or symtype in [str(spg) for spg in range(177,194+1)]:
         m = np.zeros((12, 3, 3))
         m[0][0, 0] = 0.5
         m[0][1, 1] = 0.5
@@ -408,7 +409,7 @@ def GetSymRotMat(symtype='Cubic'):
 
         return m
 
-    elif symtype == 'Tetragonal':
+    elif symtype == 'Tetragonal' or symtype in [str(spg) for spg in range(89,142+1)]:
         m = np.zeros((8, 3, 3))
 
         m[0][0,0] = 1
@@ -445,6 +446,178 @@ def GetSymRotMat(symtype='Cubic'):
 
         return m
 
+    elif symtype in [str(spg) for spg in range(1,2+1)]:
+        m = np.zeros((1,3,3)) # This is triclinic
+
+        m[0][0,0] = 1
+        m[0][1,1] = 1
+        m[0][2,2] = 1
+
+        return m
+    
+    elif symtype in [str(spg) for spg in range(3,15+1)]:
+        m = np.zeros((2,3,3)) # This is monoclinic
+
+        m[0][0,0] = 1
+        m[0][1,1] = 1
+        m[0][2,2] = 1
+
+        m[1][0,0] = -1
+        m[1][1,1] = 1
+        m[1][2,2] = -1
+
+        return m
+    
+    elif symtype in [str(spg) for spg in range(16,74+1)]:
+        m = np.zeros((4,3,3)) # This is orthorhombic
+
+        m[0][0,0] = 1
+        m[0][1,1] = 1
+        m[0][2,2] = 1
+
+        m[1][0,0] = -1
+        m[1][1,1] = -1
+        m[1][2,2] = 1
+
+        m[2][0,0] = -1
+        m[2][1,1] = 1
+        m[2][2,2] = -1
+
+        m[3][0,0] = 1
+        m[3][1,1] = -1
+        m[3][2,2] = -1        
+
+        return m
+    
+    elif symtype in [str(spg) for spg in range(75,88+1)]:
+        m = np.zeros((4,3,3)) # This is tetragonal_lower
+
+        m[0][0,0] = 1
+        m[0][1,1] = 1
+        m[0][2,2] = 1
+
+        m[1][0,0] = -1
+        m[1][1,1] = -1
+        m[1][2,2] = 1
+
+        m[2][0,1] = -1
+        m[2][1,0] = 1
+        m[2][2,2] = 1
+
+        m[3][0,1] = 1
+        m[3][1,0] = -1
+        m[3][2,2] = 1        
+
+        return m
+    
+    elif symtype in [str(spg) for spg in range(143,148+1)]:
+        m = np.zeros((3,3,3)) # This is trigonal_lower
+
+        m[0][0,0] = 1
+        m[0][1,1] = 1
+        m[0][2,2] = 1
+
+        return m
+    
+    elif symtype in [str(spg) for spg in range(149,167+1)]:
+        m = np.zeros((6,3,3)) # This is trigonal
+
+        m[0][0,0] = 1
+        m[0][1,1] = 1
+        m[0][2,2] = 1
+
+        m[1][0,0] = -1/2
+        m[1][0,1] = np.sqrt(3)/2
+        m[1][1,0] = -np.sqrt(3)/2
+        m[1][1,1] = -1/2
+        m[1][2,2] = 1
+
+        m[2][0,0] = -1/2
+        m[2][0,1] = -np.sqrt(3)/2
+        m[2][1,0] = np.sqrt(3)/2
+        m[2][1,1] = -1/2
+        m[2][2,2] = 1
+
+        m[3][0,0] = 1/2
+        m[3][0,1] = np.sqrt(3)/2
+        m[3][1,0] = np.sqrt(3)/2
+        m[3][1,1] = -1/2
+        m[3][2,2] = -1
+
+        m[4][0,0] = -1
+        m[4][1,1] = 1
+        m[4][2,2] = -1
+
+        m[5][0,0] = 1/2
+        m[5][0,1] = -np.sqrt(3)/2
+        m[5][1,0] = -np.sqrt(3)/2
+        m[5][1,1] = -1/2
+        m[5][2,2] = -1
+
+        return m
+    
+    elif symtype in [str(spg) for spg in range(168,176+1)]:
+        m = np.zeros((6,3,3)) # This is hexagonal_lower
+
+        m[0][0,0] = 1
+        m[0][1,1] = 1
+        m[0][2,2] = 1
+
+        return m
+    
+    elif symtype in [str(spg) for spg in range(195,206+1)]:
+        m = np.zeros((12,3,3)) # This is cubic_lower
+
+        m[0][0,0] = 1
+        m[0][1,1] = 1
+        m[0][2,2] = 1
+
+        m[1][0,2] = 1
+        m[1][1,0] = 1
+        m[1][2,1] = 1
+        
+        m[2][0,1] = 1
+        m[2][1,2] = 1
+        m[2][2,0] = 1
+        
+        m[3][0,0] = -1
+        m[3][1,1] = -1
+        m[3][2,2] = 1
+        
+        m[4][0,2] = -1
+        m[4][1,0] = -1
+        m[4][2,1] = 1
+        
+        m[5][0,1] = -1
+        m[5][1,2] = 1
+        m[5][2,0] = -1
+
+        m[6][0,0] = -1
+        m[6][1,1] = 1
+        m[6][2,2] = -1
+
+        m[7][0,2] = 1
+        m[7][1,0] = -1
+        m[7][2,1] = -1
+        
+        m[8][0,1] = -1
+        m[8][1,2] = -1
+        m[8][2,0] = 1
+        
+        m[9][0,0] = 1
+        m[9][1,1] = -1
+        m[9][2,2] = -1
+        
+        m[10][0,2] = -1
+        m[10][1,0] = 1
+        m[10][2,1] = -1
+        
+        m[11][0,1] = 1
+        m[11][1,2] = -1
+        m[11][2,0] = -1
+
+        return m
+    
     else:
         print("not implemented yet")
         return 0

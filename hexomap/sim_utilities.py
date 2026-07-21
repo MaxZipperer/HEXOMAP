@@ -236,7 +236,11 @@ class CrystalStr:
         elif material.endswith(('.yml', '.yaml')):
             d = utility.load_yaml(material)
             self.symtype = d['symtype']
-            if d['symtype'] == 'Tetragonal':
+            if d['symtype'] in [str(spg) for spg in range(1,230+1)]:
+                alpha, beta, gamma = np.radians([d['alpha'], d['beta'], d['gamma']])
+                a, b, c = d['PrimA'], d['PrimB'], d['PrimC']
+                self.PrimA, self.PrimB, self.PrimC = getLatticeVectors(a, b, c, alpha, beta, gamma)
+            elif d['symtype'] == 'Tetragonal':
                 self.PrimA = d['PrimA'] * np.array([1, 0, 0])
                 self.PrimB = d['PrimB'] * np.array([0, 1, 0])
                 self.PrimC = d['PrimC'] * np.array([0, 0, 1])
@@ -249,11 +253,21 @@ class CrystalStr:
                 self.PrimB = d['PrimB'] * np.array([0, 1, 0])
                 self.PrimC = d['PrimC'] * np.array([0, 0, 1])
             else:
-                raise NotImplementedError('symType should be Cubic or Hexagonal')
+                raise NotImplementedError('symType should be a string containing an integer between 1 and 230')
             for key, value in d['Atom'].items():
                 self.addAtom(value['pos'], value['atomNumber'])
         else:
             raise ValueError("Unknown material type!")
+
+    def getLatticeVectors(self, a, b, c, alpha, beta, gamma):
+        alpha, beta, gamma = np.radians([alpha, beta, gamma])
+        c_a, c_b, c_g = np.cos(alpha), np.cos(beta), np.cos(gamma)
+        s_g = np.sin(gamma)
+        vol = a*b*c*np.sqrt(1 - c_a**2 - c_b**2 - c_g**2 + 2*c_a*c_b*c_g)
+        a_vec = np.array([a, 0, 0])
+        b_vec = np.array([b*c_g, b*s_g, 0])
+        c_vec = np.array([c*c_b, c*(c_a - c_b*c_g)/s_g, vol/(a*b*s_g)])
+        return a_vec, b_vec, c_vec
 
     def setPrim(self, x, y, z):
         self.PrimA = np.array(x)
