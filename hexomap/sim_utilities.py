@@ -68,6 +68,20 @@ class Detector:
         print("J vector: ", self.Jvector)
         print("K vector: ", self.Kvector)
 
+def getLatticeVectors(a, b, c, alpha, beta, gamma, degrees=True):
+    '''
+    Builds Cartesian reference frame from lattice parameters
+    Convention is to assign a parallel to x, b as a rotation about z starting from x, and c as out of the xy plane
+    '''
+    if degrees==True:
+        alpha, beta, gamma = np.radians([alpha, beta, gamma])
+    c_a, c_b, c_g = np.cos(alpha), np.cos(beta), np.cos(gamma)
+    s_g = np.sin(gamma)
+    vol = a*b*c*np.sqrt(1 - c_a**2 - c_b**2 - c_g**2 + 2*c_a*c_b*c_g)
+    a_vec = np.array([a, 0, 0])
+    b_vec = np.array([b*c_g, b*s_g, 0])
+    c_vec = np.array([c*c_b, c*(c_a - c_b*c_g)/s_g, vol/(a*b*s_g)])
+    return a_vec, b_vec, c_vec
 
 class CrystalStr:
     def __init__(self, material='new'):
@@ -237,9 +251,9 @@ class CrystalStr:
             d = utility.load_yaml(material)
             self.symtype = d['symtype']
             if d['symtype'] in [str(spg) for spg in range(1,230+1)]:
-                alpha, beta, gamma = np.radians([d['alpha'], d['beta'], d['gamma']])
+                alpha, beta, gamma = d['alpha'], d['beta'], d['gamma']
                 a, b, c = d['PrimA'], d['PrimB'], d['PrimC']
-                self.PrimA, self.PrimB, self.PrimC = getLatticeVectors(a, b, c, alpha, beta, gamma)
+                self.PrimA, self.PrimB, self.PrimC = getLatticeVectors(a, b, c, alpha, beta, gamma, degrees=True)
             elif d['symtype'] == 'Tetragonal':
                 self.PrimA = d['PrimA'] * np.array([1, 0, 0])
                 self.PrimB = d['PrimB'] * np.array([0, 1, 0])
@@ -258,16 +272,6 @@ class CrystalStr:
                 self.addAtom(value['pos'], value['atomNumber'])
         else:
             raise ValueError("Unknown material type!")
-
-    def getLatticeVectors(self, a, b, c, alpha, beta, gamma):
-        alpha, beta, gamma = np.radians([alpha, beta, gamma])
-        c_a, c_b, c_g = np.cos(alpha), np.cos(beta), np.cos(gamma)
-        s_g = np.sin(gamma)
-        vol = a*b*c*np.sqrt(1 - c_a**2 - c_b**2 - c_g**2 + 2*c_a*c_b*c_g)
-        a_vec = np.array([a, 0, 0])
-        b_vec = np.array([b*c_g, b*s_g, 0])
-        c_vec = np.array([c*c_b, c*(c_a - c_b*c_g)/s_g, vol/(a*b*s_g)])
-        return a_vec, b_vec, c_vec
 
     def setPrim(self, x, y, z):
         self.PrimA = np.array(x)
