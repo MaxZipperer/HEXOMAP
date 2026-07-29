@@ -40,7 +40,13 @@ fadelity and efficiency.
    ```bash
    python -m hexomap
    ```
-
+6. Jupyter
+   ```bash
+   conda install -c conda-forge jupyter
+   conda install ipykernel
+   python -m ipykernel install --user --name=hexomap
+   ```
+   
 ## Usage and Examples
 1. reconstruction	
     * see jupyter notebook: demonotebooks/*, it contains a full recontruction step ( parameter optimization and recosntruction).
