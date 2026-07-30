@@ -9,7 +9,6 @@
 from pycuda.tools import clear_context_caches
 import atexit
 import cProfile, pstats
-from contextlib import contextmanager
 from io import StringIO
 #import cPickle
 import pycuda.gpuarray as gpuarray
@@ -217,28 +216,6 @@ class Reconstructor_GPU():
             self.ctx.detach()
         except (AttributeError, cuda.LogicError):
             pass
-
-    @contextmanager
-    def _cuda_context(self):
-        """Ensure this reconstructor's CUDA context is active (needed in Jupyter)."""
-        if not hasattr(self, 'ctx') or self.ctx is None:
-            raise RuntimeError(
-                "Reconstructor_GPU CUDA context is unavailable. "
-                "Restart the Jupyter kernel and create a new Reconstructor_GPU."
-            )
-        pushed = False
-        try:
-            current = cuda.Context.get_current()
-        except cuda.LogicError:
-            current = None
-        if current is not self.ctx:
-            self.ctx.push()
-            pushed = True
-        try:
-            yield
-        finally:
-            if pushed:
-                self.ctx.pop()
             
     def _init_gpu(self):
         """
@@ -320,8 +297,7 @@ class Reconstructor_GPU():
         print(f'maxQ: {self.maxQ}, minQ: {self.minQ}, NG: {self.NG}')
         if self.NG==0:
             raise ValueError(f'NG is 0, please check lattice constant(in Angstrom) and maxQ!')
-        with self._cuda_context():
-            self.afGD = gpuarray.to_gpu(self.sample.Gs.astype(np.float32))
+        self.afGD = gpuarray.to_gpu(self.sample.Gs.astype(np.float32))
 
     def set_det_param(self,L,J,K, rot,
                       NJ=[2048,2048,2048],NK=[2048,2048,2048],
@@ -382,8 +358,7 @@ class Reconstructor_GPU():
                                                 self.detectors[i].CoordOrigin,self.detectors[i].Norm,self.detectors[i].Jvector,
                                                self.detectors[i].Kvector,np.array([self.NRot,self.detOmegaStart,self.detOmegaRange + self.detOmegaStart])]))
         self.afDetInfoH = np.concatenate(lDetInfoTmp)
-        with self._cuda_context():
-            self.afDetInfoD = gpuarray.to_gpu(self.afDetInfoH.astype(np.float32))
+        self.afDetInfoD = gpuarray.to_gpu(self.afDetInfoH.astype(np.float32))
 
     def set_voxel_pos(self,pos,mask=None):
         '''
@@ -1497,8 +1472,7 @@ class Reconstructor_GPU():
         # create texture memory
         #print('start of create data on cpu ram')
         self.__create_acExpDataCpuRam()
-        with self._cuda_context():
-            self.acExpDataD = gpuarray.to_gpu(self.acExpDataCpuRam)
+        self.acExpDataD = gpuarray.to_gpu(self.acExpDataCpuRam)
         #print('=============end of copy exp data to gpu ===========')
 
     def recon_prepare(self,reverseRot=False, bReloadExpData=True, clearCpuMemory=True):
@@ -1567,9 +1541,8 @@ class Reconstructor_GPU():
 
         # initialize device parameters and outputs
         #self.afGD = gpuarray.to_gpu(self.sample.Gs.astype(np.float32))
-        with self._cuda_context():
-            self.afDetInfoD = gpuarray.to_gpu(self.afDetInfoH.astype(np.float32))
-            self.afFZMatD = gpuarray.to_gpu(self.FZMatH.astype(np.float32))          # no need to modify during process
+        self.afDetInfoD = gpuarray.to_gpu(self.afDetInfoH.astype(np.float32))
+        self.afFZMatD = gpuarray.to_gpu(self.FZMatH.astype(np.float32))          # no need to modify during process
 
     def serial_recon_multi_stage(self, enablePostProcess=True, verbose=True):
         '''
@@ -1580,10 +1553,6 @@ class Reconstructor_GPU():
         # Example Usage:
         :return:
         '''
-        with self._cuda_context():
-            self._serial_recon_multi_stage_impl(enablePostProcess=enablePostProcess, verbose=verbose)
-
-    def _serial_recon_multi_stage_impl(self, enablePostProcess=True, verbose=True):
         # self.recon_prepare()
 
         # timing tools:
@@ -2074,13 +2043,6 @@ class Reconstructor_GPU():
             minRange: search will terminate after search range is lower than this value
             twiddle: use twiddle like search or not
         '''
-        with self._cuda_context():
-            self._single_voxel_recon_impl(
-                voxelIdx, afFZMatD, NSearchOrien, NIteration=NIteration,
-                BoundStart=BoundStart, verbose=verbose, minRange=minRange, twiddle=twiddle,
-            )
-
-    def _single_voxel_recon_impl(self, voxelIdx, afFZMatD, NSearchOrien, NIteration=10, BoundStart=0.3, verbose=True, minRange=0.0005, twiddle=True):
                 # reconstruction of single voxel
         NBlock = 16    #Strange it may be, but this parameter will acturally affect reconstruction speed (25s to 31 seconds/100voxel)
         NVoxel = 1
@@ -2205,10 +2167,6 @@ class Reconstructor_GPU():
         :param NOrientation:
         :return:
         '''
-        with self._cuda_context():
-            return self._unit_run_hitratio_impl(afVoxelPosD, rotMatSearchD, NVoxel, NOrientation)
-
-    def _unit_run_hitratio_impl(self,afVoxelPosD, rotMatSearchD, NVoxel, NOrientation):
         # if not (isinstance(afVoxelPosD, pycuda.gpuarray.GPUArray) and isinstance(rotMatSearchD, pycuda.gpuarray.GPUArray)):
         #     raise TypeError('afVoxelPosD and rotMatSearchD should be gpuarray, not allocator or other.')
         # if NVoxel*NOrientation < 350:
