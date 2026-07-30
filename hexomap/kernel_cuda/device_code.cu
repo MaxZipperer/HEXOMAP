@@ -309,7 +309,9 @@ __global__ void hitratio_multi_detector(const int iNVoxel,const int iNOrientatio
                 if (iz < 0 || iz >= nSlice || iy < 0 || iy >= iExpNK || ix < 0 || ix >= iExpNJ) {
                     allTrue1 = false;
                 } else {
-                    allTrue1 *= acExpData[iz*iExpNK*iExpNJ + iy*iExpNJ + ix];
+                    // 64-bit offset: NDet*NRot*NK*NJ exceeds int32 range for NRot >= ~360
+                    size_t lOffset = ((size_t)iz * iExpNK + iy) * (size_t)iExpNJ + ix;
+                    allTrue1 *= acExpData[lOffset];
                 }
                 k += 1;
             }
