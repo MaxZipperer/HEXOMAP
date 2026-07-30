@@ -64,6 +64,16 @@ def _gpu_select_orientations(rot_mat_d, row_indices):
     mats = rot_mat_d.get().reshape(-1, 9)[row_indices].astype(np.float32)
     return gpuarray.to_gpu(mats.ravel())
 
+def _alloc_sim_buffers(n_sim):
+    """Zero-initialized simulation buffers (uninitialized mem_alloc caused illegal access after tex3D removal)."""
+    return (
+        gpuarray.zeros(n_sim, dtype=np.int32),
+        gpuarray.zeros(n_sim, dtype=np.int32),
+        gpuarray.zeros(n_sim, dtype=np.float32),
+        gpuarray.zeros(n_sim, dtype=np.bool_),
+        gpuarray.zeros(n_sim, dtype=np.int32),
+    )
+
 def segment_grain(m0, symType='Hexagonal', threshold=0.01,save=True,outFile='default_segment_grain.npy'):
     mShape = m0.shape[0:2]
     mask = np.zeros(mShape)
@@ -1973,11 +1983,9 @@ class Reconstructor_GPU():
         NOriPerVoxel = oriMatToSim.shape[0]/NVoxel
         #self.NG = self.sample.Gs.shape[0]
         #output device parameters:
-        aiJD = gpuarray.empty(int(NVoxel*NOriPerVoxel*self.NG*2*self.NDet),np.int32)
-        aiKD = gpuarray.empty(int(NVoxel*NOriPerVoxel*self.NG*2*self.NDet),np.int32)
-        afOmegaD= gpuarray.empty(int(NVoxel*NOriPerVoxel*self.NG*2*self.NDet),np.float32)
-        abHitD = gpuarray.empty(int(NVoxel*NOriPerVoxel*self.NG*2*self.NDet),np.bool_)
-        aiRotND = gpuarray.empty(int(NVoxel*NOriPerVoxel*self.NG*2*self.NDet), np.int32)
+        aiJD, aiKD, afOmegaD, abHitD, aiRotND = _alloc_sim_buffers(
+            int(NVoxel * NOriPerVoxel * self.NG * 2 * self.NDet)
+        )
 
 
         # start of simulation
@@ -2034,11 +2042,9 @@ class Reconstructor_GPU():
         NBlock = 16    #Strange it may be, but this parameter will acturally affect reconstruction speed (25s to 31 seconds/100voxel)
         NVoxel = 1
         afVoxelPosD = gpuarray.to_gpu(self.voxelpos[voxelIdx, :].astype(np.float32))
-        aiJD = cuda.mem_alloc(NVoxel * NSearchOrien * self.NG * 2 * self.NDet * np.int32(0).nbytes)
-        aiKD = cuda.mem_alloc(NVoxel * NSearchOrien * self.NG * 2 * self.NDet * np.int32(0).nbytes)
-        afOmegaD = cuda.mem_alloc(NVoxel * NSearchOrien * self.NG * 2 * self.NDet * np.float32(0).nbytes)
-        abHitD = cuda.mem_alloc(NVoxel * NSearchOrien * self.NG * 2 * self.NDet * np.bool_(0).nbytes)
-        aiRotND = cuda.mem_alloc(NVoxel * NSearchOrien * self.NG * 2 * self.NDet * np.int32(0).nbytes)
+        aiJD, aiKD, afOmegaD, abHitD, aiRotND = _alloc_sim_buffers(
+            NVoxel * NSearchOrien * self.NG * 2 * self.NDet
+        )
         afHitRatioD = cuda.mem_alloc(NVoxel * NSearchOrien * np.float32(0).nbytes)
         aiPeakCntD = cuda.mem_alloc(NVoxel * NSearchOrien * np.int32(0).nbytes)
         #afHitRatioH = np.random.randint(0,100,NVoxel * NSearchOrien)
@@ -2168,11 +2174,9 @@ class Reconstructor_GPU():
         # if NVoxel==0 or NOrientation==0:
         #     print('number of voxel {0} and orientation {1} is not in right form'.format(NVoxel,NOrientation))
         #     return 0,0
-        aiJD = cuda.mem_alloc(NVoxel * NOrientation * self.NG * 2 * self.NDet * np.int32(0).nbytes)
-        aiKD = cuda.mem_alloc(NVoxel * NOrientation * self.NG * 2 * self.NDet * np.int32(0).nbytes)
-        afOmegaD = cuda.mem_alloc(NVoxel * NOrientation * self.NG * 2 * self.NDet * np.float32(0).nbytes)
-        abHitD = cuda.mem_alloc(NVoxel * NOrientation * self.NG * 2 * self.NDet * np.bool_(0).nbytes)
-        aiRotND = cuda.mem_alloc(NVoxel * NOrientation * self.NG * 2 * self.NDet * np.int32(0).nbytes)
+        aiJD, aiKD, afOmegaD, abHitD, aiRotND = _alloc_sim_buffers(
+            NVoxel * NOrientation * self.NG * 2 * self.NDet
+        )
         # kernel calls
         self.sim_func(aiJD, aiKD, afOmegaD, abHitD, aiRotND, \
                       np.int32(NVoxel), np.int32(NOrientation), np.int32(self.NG), np.int32(self.NDet),

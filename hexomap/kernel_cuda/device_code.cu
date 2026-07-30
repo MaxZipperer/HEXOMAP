@@ -197,13 +197,21 @@ __global__ void simulation(int *aiJ, int *aiK, float *afOmega, bool *abHit,int *
 	 */
 	float fOmegaRes1,fOmegaRes2,fTwoTheta,fEta,fChi;
 	float afScatteringVec[3]={0,0,0};
+	int iBase = blockIdx.x*gridDim.y*blockDim.x*2*iNDet+ blockIdx.y*blockDim.x*2*iNDet + threadIdx.x*2*iNDet;
+	for(int d=0; d<2*iNDet; d++){
+		abHit[iBase+d] = false;
+		aiJ[iBase+d] = 0;
+		aiK[iBase+d] = 0;
+		aiRotN[iBase+d] = 0;
+		afOmega[iBase+d] = 0.f;
+	}
 	for (int i=0;i<3;i++){
 		for(int j=0;j<3;j++){
 		    afScatteringVec[i] += afOrientation[blockIdx.x*gridDim.y*9+blockIdx.y*9+i*3+j]*afG[threadIdx.x*3+j];
 		}
 	}
 	if(GetScatteringOmegas( fOmegaRes1, fOmegaRes2, fTwoTheta, fEta, fChi , afScatteringVec,fBeamEnergy)){
-		int i = blockIdx.x*gridDim.y*blockDim.x*2*iNDet+ blockIdx.y*blockDim.x*2*iNDet + threadIdx.x*2*iNDet;
+		int i = iBase;
 		for(int iDetIdx=0;iDetIdx<iNDet;iDetIdx++){
 			GetPeak(aiJ[i+iDetIdx],aiJ[i+iDetIdx+iNDet],aiK[i+iDetIdx],aiK[i+iDetIdx+iNDet],
 					abHit[i+iDetIdx],abHit[i+iDetIdx+iNDet],
@@ -295,7 +303,14 @@ __global__ void hitratio_multi_detector(const int iNVoxel,const int iNOrientatio
                 int iz = k*iNRot + aiRotN[idx];
                 int iy = aiK[idx];
                 int ix = aiJ[idx];
-                allTrue1 *= acExpData[iz*iExpNK*iExpNJ + iy*iExpNJ + ix];
+                // Texture reads (tex3D) returned 0 for out-of-range coordinates.
+                // Direct indexing raises illegal memory access unless bounds-checked.
+                int nSlice = iNDet * iNRot;
+                if (iz < 0 || iz >= nSlice || iy < 0 || iy >= iExpNK || ix < 0 || ix >= iExpNJ) {
+                    allTrue1 = false;
+                } else {
+                    allTrue1 *= acExpData[iz*iExpNK*iExpNJ + iy*iExpNJ + ix];
+                }
                 k += 1;
             }
             iPeakCnt += allTrue0;
