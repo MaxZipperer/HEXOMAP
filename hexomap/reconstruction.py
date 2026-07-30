@@ -74,6 +74,11 @@ def _alloc_sim_buffers(n_sim):
         gpuarray.zeros(n_sim, dtype=np.int32),
     )
 
+def _free_gpu_buffer(buf):
+    free = getattr(buf, 'free', None)
+    if free is not None:
+        free()
+
 def segment_grain(m0, symType='Hexagonal', threshold=0.01,save=True,outFile='default_segment_grain.npy'):
     mShape = m0.shape[0:2]
     mask = np.zeros(mShape)
@@ -2140,13 +2145,8 @@ class Reconstructor_GPU():
                                  :-(self.NSelect + 1):-1]  # from larges hit ratio to smaller
                 maxMatD = _gpu_select_orientations(rotMatSearchD, maxHitratioIdx)
                 del rotMatSearchD
-        aiJD.free()
-        aiKD.free()
-        afOmegaD.free()
-        abHitD.free()
-        aiRotND.free()
-        afHitRatioD.free()
-        aiPeakCntD.free()
+        for buf in (aiJD, aiKD, afOmegaD, abHitD, aiRotND, afHitRatioD, aiPeakCntD):
+            _free_gpu_buffer(buf)
         maxMat = maxMatD.get().reshape([-1, 3, 3])
         if verbose:
             #print(i)
@@ -2202,13 +2202,8 @@ class Reconstructor_GPU():
         aiPeakCntH = np.empty(NVoxel*NOrientation, np.int32)
         cuda.memcpy_dtoh(afHitRatioH, afHitRatioD)
         cuda.memcpy_dtoh(aiPeakCntH, aiPeakCntD)
-        aiJD.free()
-        aiKD.free()
-        afOmegaD.free()
-        abHitD.free()
-        aiRotND.free()
-        afHitRatioD.free()
-        aiPeakCntD.free()
+        for buf in (aiJD, aiKD, afOmegaD, abHitD, aiRotND, afHitRatioD, aiPeakCntD):
+            _free_gpu_buffer(buf)
         return afHitRatioH, aiPeakCntH
 
     def expansion_unit_run(self, voxelIdx, afFZMatD):
