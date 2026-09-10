@@ -1,6 +1,6 @@
 import cv2
 import glob
-import logging
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -19,71 +19,130 @@ from scipy.ndimage import label
 import hexomap
 from hexomap import IntBin
 
-def MedianBlock(layer, fstart, fend, config):
-    #Creates median images and raw image stack for processing
-    if config is not None:
-        FilePerMedian = int(config['NRot']/config['NMedian'])
+def iter_image_block(layer, det, rstart, numFiles, config):
+    '''
+    Yield rotations rstart to rstart+numFiles-1 of one detector one image at a
+    time, so that a caller that works frame by frame never holds the whole run.
+
+    With imgFormat 'h5' the images come from one rotation stack per recorded
+    file, named imgPrefix + (startIdx + layer*NDet + det) + extension, or from a
+    single archive holding every detector when h5Img is set.  Otherwise each
+    rotation is its own file, numbered startIdx + (layer*NDet + det)*NRot + rot.
+    '''
+    iDet = list(config['layerIdx']).index(layer)*config['NDet'] + det
+
+    if str(config.get('imgFormat', 'tif')).lower() in ('h5', 'hdf5'):
+        fName = config.get('h5Img') or (f"{config['imgPrefix']}"
+                                        f"{str(config['startIdx'] + iDet).zfill(config['NDigit'])}"
+                                        f"{config['extension']}")
+        #a single archive holds the detectors one NRot long stretch after another
+        istart = (int(config.get('h5StartFrame', 0)) + rstart
+                  + (iDet*config['NRot'] if config.get('h5Img') else 0))
+        with h5py.File(fName, 'r') as fin:
+            lPath = [config['h5Path']] if config.get('h5Path') else []
+            if not lPath:
+                #fall back to the only 3D dataset in the archive
+                fin.visititems(lambda name, obj: lPath.append(name)
+                               if isinstance(obj, h5py.Dataset) and obj.ndim == 3 else None)
+                if len(lPath) != 1:
+                    raise KeyError(f"Cannot choose an image stack among {lPath}, set config['h5Path']")
+            dset = fin[lPath[0]]
+            if tuple(dset.shape[1:]) != (config['dety'], config['detz']):
+                raise ValueError(f"{fName}: images are {dset.shape[1:]}, config says {(config['dety'], config['detz'])}")
+            if istart + numFiles > dset.shape[0]:
+                raise IndexError(f"{fName}: need images {istart}-{istart + numFiles - 1} but the stack only holds {dset.shape[0]}")
+            for i in range(numFiles):
+                yield dset[istart + i]
     else:
-        FilePerMedian = fend - fstart + 1
-    raw = np.zeros((FilePerMedian, config['dety'], config['detz']), dtype=np.int16)
-    medianimage = np.zeros((config['dety'], config['detz']), dtype=np.int16)
+        for i in range(numFiles):
+            ifile = config['startIdx'] + iDet*config['NRot'] + rstart + i
+            try:
+                yield tiff.imread(f"{config['imgPrefix']}{str(ifile).zfill(config['NDigit'])}{config['extension']}")
+            except Exception as e:
+                print(f"Error reading file {ifile}: {e}")
+                raise
 
-    for ifile in range(int(fstart), fend + 1):
-        try:
-            print(f"Reading file {ifile}")  
-            raw[ifile - fstart, :, :] = tiff.imread(f"{config['imgPrefix']}{str(ifile).zfill(6)}{config['extension']}")
-        except Exception as e:
-            print(f"Error reading file {ifile}: {e}")
-            raise
+def compute_median_block(ilayer, idet, rstart, numFiles, medFile, config):
+    '''
+    Median of one block of rotations, saved for the reduction pass to pick up.
+    Holds the whole block, which is unavoidable for a median over rotations, and
+    releases it as soon as the median is written.
+    '''
+    t0 = time.perf_counter()
+    raw = np.empty((numFiles, config['dety'], config['detz']), dtype=np.int16)
+    for i, img in enumerate(iter_image_block(ilayer, idet, rstart, numFiles, config)):
+        raw[i, :, :] = img
+    t1 = time.perf_counter()
 
-    medianimage = np.median(raw, axis=0).astype(np.int16)
-    medianfilename = config['medOut'] + 'layer' + str(layer) + ':' + str(fstart) + '-' + str(fend) + '.npy'
-    np.save(medianfilename, medianimage)
-    return raw, medianimage
+    #overwrite_input lets numpy partition the block in place rather than copy it,
+    #which is safe here because the reduction pass rereads the images anyway
+    np.save(medFile, np.median(raw, axis=0, overwrite_input=True).astype(np.int16))
+    return (f"[L{ilayer} D{idet}] median over rotations {rstart}-{rstart + numFiles - 1}"
+            f" | Read: {t1-t0:.2f}s | Median: {time.perf_counter()-t1:.2f}s")
 
+@njit(cache=True)
 def extract_peaks_numbaV2(img_sub, baseline=0, minNPixel=4):
     #Peak extraction by Zipeng Xu
     h, w = img_sub.shape
+    #the flood fill only ever asked whether a pixel was already taken, never
+    #which region took it, so the mask doubles as the visited marker
     mask = img_sub > baseline
-    label_map = np.zeros((h, w), dtype=np.int32)
-    current_label = 1
 
-    # Temporary arrays for collecting region-wise data
-    lXTmp = np.empty(h * w, dtype=np.int32)
-    lYTmp = np.empty(h * w, dtype=np.int32)
-    lValTmp = np.empty(h * w, dtype=np.float32)
-    lIDTmp = np.empty(h * w, dtype=np.int32)
-    lStartIdx = np.empty(h * w, dtype=np.int32)
-    lEndIdx = np.empty(h * w, dtype=np.int32)
-    lMaxVal = np.empty(h * w, dtype=np.float32)  # store region max intensity
+    # Temporary arrays for collecting region-wise data, sized by the number of
+    # pixels above baseline since no other pixel can ever be stored
+    nMask = np.count_nonzero(mask)
+    lXTmp = np.empty(nMask, dtype=np.int32)
+    lYTmp = np.empty(nMask, dtype=np.int32)
+    lValTmp = np.empty(nMask, dtype=np.float32)
+    lIDTmp = np.empty(nMask, dtype=np.int32)
+    lStartIdx = np.empty(nMask + 1, dtype=np.int32)
+    lEndIdx = np.empty(nMask + 1, dtype=np.int32)
+    lMaxVal = np.empty(nMask + 1, dtype=np.float32)  # store region max intensity
     label_counter = 0
     idx = 0
 
+    # explicit stack, grown on demand, in place of a list of coordinate tuples
+    stackX = np.empty(1024, dtype=np.int64)
+    stackY = np.empty(1024, dtype=np.int64)
+
     for x in range(h):
         for y in range(w):
-            if mask[x, y] and label_map[x, y] == 0:
+            if mask[x, y]:
                 # Start flood-fill
-                stack = [(x, y)]
+                stackX[0] = x
+                stackY[0] = y
+                nStack = 1
                 region_idx_start = idx
 
-                while stack:
-                    cx, cy = stack.pop()
-                    if 0 <= cx < h and 0 <= cy < w and mask[cx, cy] and label_map[cx, cy] == 0:
-                        label_map[cx, cy] = current_label
+                while nStack > 0:
+                    nStack -= 1
+                    cx = stackX[nStack]
+                    cy = stackY[nStack]
+                    if 0 <= cx < h and 0 <= cy < w and mask[cx, cy]:
+                        mask[cx, cy] = False
                         lXTmp[idx] = cx
                         lYTmp[idx] = cy
                         lValTmp[idx] = img_sub[cx, cy]
                         lIDTmp[idx] = label_counter
                         idx += 1
+                        if nStack + 8 > stackX.size:
+                            biggerX = np.empty(stackX.size*2, dtype=np.int64)
+                            biggerY = np.empty(stackY.size*2, dtype=np.int64)
+                            biggerX[:nStack] = stackX[:nStack]
+                            biggerY[:nStack] = stackY[:nStack]
+                            stackX = biggerX
+                            stackY = biggerY
                         for dx in (-1, 0, 1):
                             for dy in (-1, 0, 1):
                                 if dx != 0 or dy != 0:
-                                    stack.append((cx + dx, cy + dy))
+                                    stackX[nStack] = cx + dx
+                                    stackY[nStack] = cy + dy
+                                    nStack += 1
 
                 region_idx_end = idx
 
                 # Compute maximum value in the region
-                vmax = 0.0
+                vmax = np.float32(0.0)
                 for i in range(region_idx_start, region_idx_end):
                     if lValTmp[i] > vmax:
                         vmax = lValTmp[i]
@@ -91,7 +150,7 @@ def extract_peaks_numbaV2(img_sub, baseline=0, minNPixel=4):
                 if vmax > baseline:
                     count_valid = 0
                     for i in range(region_idx_start, region_idx_end):
-                        if lValTmp[i] > max(1.0, 0.1 * vmax):
+                        if lValTmp[i] > max(np.float32(1.0), np.float32(0.1)*vmax):
                             count_valid += 1
                     if count_valid >= minNPixel:
                         lStartIdx[label_counter] = region_idx_start
@@ -103,13 +162,11 @@ def extract_peaks_numbaV2(img_sub, baseline=0, minNPixel=4):
                 else:
                     idx = region_idx_start  # discard region
 
-                current_label += 1
-
     # Output final arrays
     total_points = 0
     for i in range(label_counter):
         for j in range(lStartIdx[i], lEndIdx[i]):
-            if lValTmp[j] > max(1.0, 0.1 * lMaxVal[i]):
+            if lValTmp[j] > max(np.float32(1.0), np.float32(0.1)*lMaxVal[i]):
                 total_points += 1
 
     lX = np.empty(total_points, dtype=np.int32)
@@ -120,7 +177,7 @@ def extract_peaks_numbaV2(img_sub, baseline=0, minNPixel=4):
     idx_out = 0
     for i in range(label_counter):
         for j in range(lStartIdx[i], lEndIdx[i]):
-            if lValTmp[j] > max(1.0, 0.1 * lMaxVal[i]):
+            if lValTmp[j] > max(np.float32(1.0), np.float32(0.1)*lMaxVal[i]):
                 lX[idx_out] = lXTmp[j]
                 lY[idx_out] = lYTmp[j]
                 lVal[idx_out] = int(lValTmp[j])
@@ -132,62 +189,34 @@ def extract_peaks_numbaV2(img_sub, baseline=0, minNPixel=4):
     Intensity = lVal[:idx_out].astype(np.int32)
     PeakID = lID[:idx_out].astype(np.int32)
 
-    return [X_flipped, Y, Intensity, PeakID]
+    return X_flipped, Y, Intensity, PeakID
 
-def process_median_block(ilayer, idet, imed, fstart, numFiles, config):
-    #Processes images for a median
-    # Default is to print everything out
-    if config.get('verbose') is None:
-        verbose = True
-    elif config['verbose'] is True:
-        verbose = True
-    else:
-        verbose = False
+def reduce_frame_chunk(ilayer, idet, rstart, numFiles, medFile, config):
+    '''
+    Subtract the block median from a run of frames, filter, extract peaks and
+    write the binaries.  Only one image is held at a time, so these tasks can be
+    spread as widely as there are cores.
+    '''
     t0 = time.perf_counter()
-    fend = fstart + numFiles - 1
+    # Default is to print everything out
+    verbose = config.get('verbose') is None or config['verbose'] is True
+    floor = np.load(medFile) + config['blanket']
 
-    # Step 1: Median computation
-    t1 = time.perf_counter()
-    if verbose is True:
-        print(f' \n Calculating median image {imed}')
-    raw, medianimage = MedianBlock(layer=ilayer, fstart=fstart, fend=fend, config=config)
-    t2 = time.perf_counter()
-
-    # Step 2: Subtract and convert
-    if verbose is True:
-        print(f' \n Subtracting median image {imed}')
-    raw = raw - (medianimage + config['blanket'])
-    raw[raw < 0] = 0
-    Subtrfloat = raw.astype(np.float32)
-    t3 = time.perf_counter()
-    
-    # Step 3: Loop over frames to filter and extract
-    for ind in range(numFiles):
-        img = Subtrfloat[ind, :, :]
-        frame_index = ind + numFiles*imed
-        '''plt.imshow(img,cmap='magma_r',vmin=0,vmax=20)
-        plt.title(f'Sub Img {ind} Med {imed}')
-        plt.show()'''
-        if verbose is True:
-            print(f' \n Performing LoG filtering for image {frame_index}')
+    for ind, frame in enumerate(iter_image_block(ilayer, idet, rstart, numFiles, config)):
+        frame_index = rstart + ind
+        if verbose:
+            print(f' \n Reducing image {frame_index}')
+        img = frame.astype(np.int16) - floor
+        img[img < 0] = 0
+        img = img.astype(np.float32)
         LoG = ndi.gaussian_laplace(img, sigma=config['LoGsig'])
-        Reduced = (LoG < config['LoGcut']) * img
-        '''plt.imshow(Reduced,cmap='magma_r',vmin=0,vmax=20)
-        plt.title(f'Reduced Img {ind} Med {imed}')
-        plt.show()'''
-        if verbose is True:
-            print(f' \n Extracting peaks for image {frame_index}')
-        snp = extract_peaks_numbaV2(Reduced, baseline=config['baseline'], minNPixel=config['minNPixel'])
-        #frame_id = fstart + ind
-        #frame_index = frame_id - config['startIdx']
-        bin_filename = f"{config['binOut']}z{ilayer}_{str(frame_index).zfill(config['NDigit'])}.bin{idet}"
-        if verbose is True:
-            print(f' \n Writing binary file {frame_index}')
-        IntBin.WritePeakBinaryFile(snp, bin_filename)
+        snp = extract_peaks_numbaV2((LoG < config['LoGcut'])*img,
+                                    baseline=config['baseline'], minNPixel=config['minNPixel'])
+        IntBin.WritePeakBinaryFile(
+            snp, f"{config['binOut']}z{ilayer}_{str(frame_index).zfill(6)}.bin{idet}")
 
-    t4 = time.perf_counter()
-
-    return f"[L{ilayer} D{idet} M{imed}] files {fstart}-{fend} | Median: {t2-t1:.2f}s | Subtract: {t3-t2:.2f}s | Reduce+Write: {t4-t3:.2f}s"
+    return (f"[L{ilayer} D{idet}] reduced rotations {rstart}-{rstart + numFiles - 1}"
+            f" | {time.perf_counter()-t0:.2f}s")
 
 def image_reduction(config):
     '''
@@ -199,8 +228,13 @@ def image_reduction(config):
     'medOut': '/mnt/data/mzippere/test/test_', #Median image output directory
     'binOut': '/mnt/data/mzippere/test/test_', #Binarized image output directory
     'imgPrefix': '/mnt/data/mzippere/pokharel_jun25/nf/nf_Ti_1/nf_Ti_1_', #File path up to index for finding images
-    'NDigit': 6, #Number of digits in image file name
+    'NDigit': 6, #Number of digits the index is zero padded to in the image file name
     'extension': '.tif', #Image file extension
+
+    'imgFormat': 'tif', #'tif' for one file per image, 'h5' for one h5 image stack per detector
+    'h5Path': 'exchange/data', #Dataset holding the (NRot, dety, detz) stack, autodetected if unset
+    'h5StartFrame': 0, #Row of the first rotation image within the stack
+    'h5Img': None, #Set only when a single archive holds every detector, overrides the file name above
 
     'NMedian': 2, #Number of medians per detector
     'blanket': 5, #Flat subtraction
@@ -211,71 +245,75 @@ def image_reduction(config):
 
     'layerIdx': [0], #Layers to process, must be a list
     'NDet': 2, #Number of detectors
-    'NRot': 20, #Images per detector
+    'NRot': 20, #Images per detector to use, images recorded beyond this are ignored
     'startIdx': 44033, #File start index
 
-    'fixLast': False, #Whether to add extra images at the end of a detector
-    'fixMedN': 0, #Number of extra images to add
+    'fixLast': True, #Whether the last median absorbs the remainder when NRot/NMedian is not whole
     'verbose': True, #Defaults to True if left unset, prints out extra information on where the code is
+
+    'NWorker': 56, #Processes to reduce frames on, defaults to 40
+    'NFramePerTask': 8, #Frames per reduction task, defaults to 8
 }
+    Each detector is done in two passes.  The first computes the NMedian median
+    backgrounds, one per process, each holding its own block of images and
+    releasing it once the median is saved to medOut.  The second rereads the
+    images and spreads subtraction, filtering, extraction and writing over
+    NWorker processes in runs of NFramePerTask frames, holding a single image per
+    process.  Peak memory is therefore set by the first pass, at NMedian blocks
+    of NRot/NMedian images, rather than by the whole detector at once.
+
+    Binary output is always numbered z{layer}_{rot:06d}.bin{det} with rot running
+    0 to NRot-1, while NDigit describes the padding of the input file names only.
+
+    With imgFormat 'h5' each recorded file is a whole rotation stack rather than a
+    single image, so startIdx is the number of the first archive and the file for a
+    given detector is imgPrefix + (startIdx + layer*NDet + det) + extension, e.g.
+    NF_Au_cube_0802_0708.h5 and NF_Au_cube_0802_0709.h5 for a two detector scan
+    with imgPrefix 'NF_Au_cube_0802_', NDigit 4, extension '.h5', startIdx 708.
+    Rotation rot of that detector is read from row h5StartFrame + rot.
     '''
     if isinstance(config, str):
         with open(config,'r') as f:
             config = yaml.safe_load(f)
-    elif isinstance(config, dict):
-        pass
-    else:
+    elif not isinstance(config, dict):
         print(f'Input config must be dictionary or path to yaml file')
         return
-    
-    logger = logging.getLogger()
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(fmt="%(asctime)s [PID %(process)d] %(message)s", datefmt="%H:%M:%S")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-    
+
     # main loop
-    now = datetime.now()
-    print(50*' ', now.strftime("%H:%M:%S"))
-    startrunt = time.perf_counter()
-    fstart = config['startIdx']
+    print(50*' ', datetime.now().strftime("%H:%M:%S"))
     FilePerMedian = int(config['NRot']/config['NMedian'])
-    
+    NWorker = int(config.get('NWorker') or 40)
+    NFramePerTask = int(config.get('NFramePerTask') or 8)
+
+    # rotations covered by each median, the last one taking the remainder
+    lEdge = [imed*FilePerMedian for imed in range(config['NMedian'])]
+    lEdge.append(config['NRot'] if config['fixLast'] else config['NMedian']*FilePerMedian)
+    lBlock = [(lEdge[i], lEdge[i + 1] - lEdge[i]) for i in range(config['NMedian'])]
+
     for ilayer in config['layerIdx']:
         print('Layer number ', ilayer)
         startlayert = time.perf_counter()
-        Ndeti = config['NDet']
-        print('Detector ', Ndeti)
-    
-        for idet in range(Ndeti):
-            tasks = []
-            fstart_local = fstart
-            fstart0 = config['startIdx'] + idet * config['NRot']
-    
-            with ProcessPoolExecutor(max_workers=40) as executor:
-                for imed in range(config['NMedian']):
-                    if config['fixLast'] and imed == config['NMedian'] - 1:
-                        numFiles = FilePerMedian + config['fixMedN']
-                    else:
-                        numFiles = FilePerMedian
-    
-                    tasks.append(executor.submit(
-                        process_median_block,
-                        ilayer, idet, imed, fstart_local, numFiles, config
-                    ))
-    
-                    fstart_local += numFiles
-    
-                for task in tasks:
+        print('Detector ', config['NDet'])
+
+        for idet in range(config['NDet']):
+            lMed = [f"{config['medOut']}layer{ilayer}_det{idet}_med{imed}.npy"
+                    for imed in range(config['NMedian'])]
+
+            # Pass 1: one median per worker, each holding its own block of images
+            with ProcessPoolExecutor(max_workers=min(config['NMedian'], NWorker)) as executor:
+                for task in [executor.submit(compute_median_block, ilayer, idet, rs, nf, lMed[i], config)
+                             for i, (rs, nf) in enumerate(lBlock)]:
                     print(task.result())
-    
-            fstart = fstart_local  # update global fstart after parallel
-    
-        stoplayert = time.perf_counter()
-        print(10*' ', f'Finished layer {ilayer} in {stoplayert - startlayert:.2f} sec')
-        
+
+            # Pass 2: frames spread over the whole pool, one image per worker
+            with ProcessPoolExecutor(max_workers=NWorker) as executor:
+                for task in [executor.submit(reduce_frame_chunk, ilayer, idet, cstart,
+                                             min(NFramePerTask, rs + nf - cstart), lMed[i], config)
+                             for i, (rs, nf) in enumerate(lBlock)
+                             for cstart in range(rs, rs + nf, NFramePerTask)]:
+                    print(task.result())
+
+        print(10*' ', f'Finished layer {ilayer} in {time.perf_counter() - startlayert:.2f} sec')
     return
 
 def median_background(initial,startIdx,outInitial, NRot=720, NDet=2,NLayer=1,layerIdx=[0],digitLength=6,end='.tif', imgshape=[2048,2048],logfile=None):
