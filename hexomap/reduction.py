@@ -209,6 +209,8 @@ def reduce_frame_chunk(ilayer, idet, rstart, numFiles, medFile, config):
         img = frame.astype(np.int16) - floor
         img[img < 0] = 0
         img = img.astype(np.float32)
+        if config['gaussBlur'] is not None:
+            img = cv2.GaussianBlur(img, ksize=(0,0), sigmaX=config['gaussBlur'], sigmaY=config['gaussBlur'], borderType=0)
         LoG = ndi.gaussian_laplace(img, sigma=config['LoGsig'])
         snp = extract_peaks_numbaV2((LoG < config['LoGcut'])*img,
                                     baseline=config['baseline'], minNPixel=config['minNPixel'])

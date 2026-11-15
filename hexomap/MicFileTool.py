@@ -433,11 +433,11 @@ def plot_mic_and_conf(squareMicData,minHitRatio,saveName=None,figSizeX=10,figSiz
     hitRatioMask = (squareMicData[:,:,6]>minHitRatio)[:,:,np.newaxis].repeat(3,axis=2)
     img = ((rods + np.array([1, 1, 1])) / 2).reshape([squareMicData.shape[0],squareMicData.shape[1],3]) * hitRatioMask
     img = np.swapaxes(img,0,1)
-    fig, axes = plt.subplots(1,2)
+    fig, axes = plt.subplots(1,2,figsize=(figSizeX,figSizeY))
     axes[0].imshow(img,origin='lower',extent=[squareMicData[0,0,0],squareMicData[-1,0,0],squareMicData[0,0,1],squareMicData[0,-1,1]])
     confMap = axes[1].imshow(squareMicData[:,:,6].T,origin='lower',extent=[squareMicData[0,0,0],squareMicData[-1,0,0],squareMicData[0,0,1],squareMicData[0,-1,1]])
     fig.colorbar(confMap, ax=axes[1],fraction=0.046, pad=0.04)
-    fig.set_size_inches(figSizeX, figSizeY)
+    #fig.set_size_inches(figSizeX, figSizeY)
     if saveName is not None:
         plt.savefig(saveName)
     plt.show()

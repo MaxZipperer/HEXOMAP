@@ -177,7 +177,7 @@ class Reconstructor_GPU():
         self.floodFillSelectThreshold = 0.85 # voxels with hitratio less than this value will be reevaluated in flood fill process.
         self.floodFillAccptThreshold = 0.85  #voxel with hit ratio > floodFillTrheshold will be accepted to voxelIdxStage1
         self.floodFillRandomRange = 0.005   # voxel in fill process will generate random angles in this window, todo@he1
-        self.floodFillNumberAngle = 1000 # number of rangdom angles generated to voxel in voxelIdxStage1
+        self.floodFillNumberAngle = 1000 # number of random angles generated to voxel in voxelIdxStage1
         self.floodFillNumberVoxel = 20000  # number of orientations for flood fill process each time, due to GPU memory size.
         self.floodFillNIteration = 2       # number of iteration for flood fill angles
         self.searchBatchSize = 20000      # number of orientations to search per GPU call, due to GPU memory size
@@ -1675,7 +1675,7 @@ class Reconstructor_GPU():
         # self.expData[:, 2:4] = self.expData[:, 2:4] / 4  # half the detctor size, to rescale real data
         # self.__cp_expdata_to_gpu()
         ############### test section edn ###################
-        print('start of post processing, moving grain boundaries untile stable')
+        print('start of post processing, moving grain boundaries until stable')
         NVoxelX = self.squareMicData.shape[0]
         NVoxelY = self.squareMicData.shape[1]
         accMat = self.voxelAcceptedMat.copy().reshape([NVoxelX, NVoxelY, 9])
@@ -1751,7 +1751,7 @@ class Reconstructor_GPU():
         # self.expData[:, 2:4] = self.expData[:, 2:4] / 4  # half the detctor size, to rescale real data
         # self.__cp_expdata_to_gpu()
         ############### test section edn ###################
-        print('start post processing, moving grain boundaries untile stable ...')
+        print('start post processing, moving grain boundaries until stable ...')
         start = time.time()
         NVoxelX = self.squareMicData.shape[0]
         NVoxelY = self.squareMicData.shape[1]
@@ -1768,7 +1768,7 @@ class Reconstructor_GPU():
         while np.max(misOrienTmp) > self.postConvergeMisOrien and NIteration<NIterationMax:
             NIteration +=1
             self.NPostProcess += 1
-            hitratioMask = (self.voxelHitRatio>self.postThreshold).reshape([NVoxelX,NVoxelY]) # avoid very low confidence area that may cause infinate loop
+            hitratioMask = (self.voxelHitRatio>self.postThreshold).reshape([NVoxelX,NVoxelY]) # avoid very low confidence area that may cause infinite loop
             maxMisOrien = np.max(misOrienTmp)
             misOrienTmp = ndi.maximum_filter(misOrienTmp * hitratioMask, self.postWindow) # due to expansion mode
             x, y = np.where(np.logical_and(misOrienTmp > self.postMisOrienThreshold, self.squareMicData[:, :, 7] == 1))

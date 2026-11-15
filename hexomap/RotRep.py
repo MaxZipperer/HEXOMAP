@@ -708,11 +708,12 @@ def Misorien2FZ1Vectorized(m1, m2, symtype='Cubic'):
     tmp = np.matmul(m1.reshape([1,n,3,3]), tmp) #[ns,n,3,3]
     #print(f'tmp.shape: {tmp.shape}')    
     #cosangle = 0.5 * (tmp.trace() - 1)
-    cosangle = 0.5*(tmp.trace(axis1=2,axis2=3)-1)
-    cosangle[cosangle>0.9999999999] = 0.9999999999
-    cosangle[cosangle<-0.9999999999] = -0.9999999999
+    cosangle = 0.5 * (tmp.trace(axis1=2, axis2=3) - 1)
+    sinangle = 0.5 * np.sqrt((tmp[..., 2, 1] - tmp[..., 1, 2])**2
+                         + (tmp[..., 0, 2] - tmp[..., 2, 0])**2
+                         + (tmp[..., 1, 0] - tmp[..., 0, 1])**2)
+    newangle = np.arctan2(sinangle, cosangle)
     #print(f'cosangle.shape: {cosangle.shape}')
-    newangle = np.arccos(cosangle)
     idx = np.argmin(newangle,axis=0)
     angle = np.take_along_axis(newangle, np.expand_dims(idx,axis=0), axis=0).ravel()
     #print(tmp.shape,idx.shape,idx)
@@ -748,9 +749,10 @@ def Misorien2FZ1(m1, m2, symtype='Cubic'):
     for op in ops:
         tmp = m1.dot(op.dot(m2.T))
         cosangle = 0.5 * (tmp.trace() - 1)
-        cosangle = min(0.9999999999, cosangle)
-        cosangle = max(-0.99999999999, cosangle)
-        newangle = np.arccos(cosangle)
+        sinangle = 0.5 * np.sqrt((tmp[2, 1] - tmp[1, 2])**2
+                         + (tmp[0, 2] - tmp[2, 0])**2
+                         + (tmp[1, 0] - tmp[0, 1])**2)
+        newangle = np.arctan2(sinangle, cosangle)
         if newangle < angle:
             angle = newangle
             oRes = tmp
